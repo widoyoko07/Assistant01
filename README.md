@@ -1,6 +1,7 @@
 # Assistant01
 
-Saya akan menganalisis workflow Daily MP v10 dari dokumen-dokumen yang Anda berikan.## Cek workflow v10
+<img width="1186" height="1766" alt="image" src="https://github.com/user-attachments/assets/1c5d57e5-9965-4026-8c49-25948f429633" />
+
 
 Workflow Daily MP v10 ada **5 tahap utama** dari input Drive sampai Excel (dengan approval gate di tengah):
 
