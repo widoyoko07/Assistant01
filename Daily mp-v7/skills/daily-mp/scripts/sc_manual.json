@@ -1,0 +1,100 @@
+{
+ "_catatan": "Token manual per SC. SILOG dipakai menggantikan sel deskriptif di Excel. 'extra' = tambahan keputusan user di luar Excel.",
+ "tokens": {
+  "SILOG": {
+   "Project Manager": [
+    "PM"
+   ],
+   "Deputy Project Manager": [
+    "DPM"
+   ],
+   "Construction Manager": [
+    "CM"
+   ],
+   "Deputy CM": [
+    "DCM"
+   ],
+   "Site Engineer": [
+    "SM",
+    "Site Manager",
+    "SE",
+    "Engineer",
+    "PC",
+    "PPC",
+    "Rigging Eng"
+   ],
+   "HSE Engineer": [
+    "HSE",
+    "HSE Coor",
+    "HSE Coordinator"
+   ],
+   "Surveyor": [
+    "Surveyor",
+    "Team Surveyor"
+   ],
+   "QA/QC Department": [
+    "QC",
+    "QA"
+   ],
+   "Supervisor": [
+    "SPV",
+    "Supervisor"
+   ],
+   "Foreman": [
+    "Foreman",
+    "Foremen",
+    "FM",
+    "SI",
+    "Mandor"
+   ],
+   "Scaffolder": [
+    "Inspector Scaffolding",
+    "Insp Scaffolding",
+    "Scaffolder"
+   ],
+   "Skilled Workers": [
+    "Teknisi",
+    "Rigger",
+    "Welder",
+    "Skill",
+    "Helper",
+    "Fitter"
+   ],
+   "Staff": [
+    "Admin",
+    "DOCON",
+    "Matecon",
+    "Matkon",
+    "Material Control"
+   ],
+   "Heavy Equipment Operator": [
+    "Operator Crane",
+    "Operator TMC",
+    "Operator"
+   ]
+  }
+ },
+ "extra": {
+  "SILOG": {
+   "driver": "Staff"
+  }
+ },
+ "_sections": {
+  "_default": {
+   "scaffold": "Scaffolder",
+   "surveyor": "Surveyor",
+   "warehouse": "Common Labor",
+   "hole watcher": "Common Labor",
+   "mechanical fitter": "Skilled Workers",
+   "welder": "Skilled Workers",
+   "rigger": "Skilled Workers",
+   "electri": "Skilled Workers",
+   "operator": "Heavy Equipment Operator"
+  }
+ },
+ "_forced": {
+  "SILOG": {
+   "team qc": "QA/QC Department"
+  }
+ }
+}
