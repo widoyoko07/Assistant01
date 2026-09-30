@@ -19,6 +19,7 @@ def toks(s): return {t for t in re.split(r"[^a-z]+", (s or "").lower()) if t}
 def sim(a, b): return difflib.SequenceMatcher(None, nn(a), nn(b)).ratio()
 
 def find_attendance(folder, sc, d):
+    if not folder or not os.path.isdir(folder): return None
     key = d.replace("-", "")
     for f in sorted(os.listdir(folder)):
         l = f.lower()

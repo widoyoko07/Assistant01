@@ -16,31 +16,47 @@ Ketik di chat:
 
 **Persetujuan Excel (wajib)**: tanpa kata `excel`, Claude hanya **menampilkan rekap di chat** (tabel ringkas + peringatan + cross-check), lalu bertanya satu kalimat: "Jadikan Excel?". Excel dibuat hanya setelah user menjawab ya (atau menulis `buat excel`); jangan membuat Excel sebelum disetujui. Jawaban singkat: tabel, 3-6 baris catatan terpenting, pertanyaan role baru bila ada.
 
-Yang dikerjakan Claude otomatis: cari file `<SC> TBM <YYYYMMDD> Posting.txt` dan `Attendance.pdf` di folder Drive tiap SC (ID di bawah), simpan Posting ke `/tmp/mp`, siapkan Attendance ke `/tmp/mp_att` (lihat "Sumber PDF"), jalankan `bash scripts/run_daily_mp.sh [tanggal]` (tampil ringkas) atau `bash scripts/run_daily_mp.sh --excel [tanggal]` (setelah disetujui), lalu `present_files` untuk Excel. Rentang: `run_daily_mp.sh [--excel] dari sampai`.
+Yang dikerjakan Claude otomatis: cari file `<SC> TBM <YYYYMMDD> Posting.txt` dan `Attendance.pdf` di folder Drive tiap SC (ID di bawah), simpan Posting ke `/tmp/mp`, siapkan Attendance ke `/tmp/mp_att` (lihat "Otomasi Attendance PDF"), jalankan `bash scripts/run_daily_mp.sh [tanggal]` (tampil ringkas) atau `bash scripts/run_daily_mp.sh --excel [tanggal]` (setelah disetujui), lalu `present_files` untuk Excel. Rentang: `run_daily_mp.sh [--excel] dari sampai`.
 
-Folder Drive (ID): SILOG `1wYTPvr3lVkMQ5JTfJhb4gVbj4umzVV77`, DHJ `1R_LxelCUw9Ah-uHnNPvtF2K5NxsywXx_`, TPE `1qyWFJOL-gz-WBKBS59f1GzvKBZS3Hsy3`, WME `1jBrF1vlpOg24nS47e0Takv9hjpcxBKdF`, WKP `10U6H4n-fTji42FcABm9uF10XOKm51dbH`, TODJO `1Ak9NOyQzC_Z5M3glkMuxGAOhp7fvmxJd`, BCP `1dniJsg_TSkxtWA_Ixqx5uLOvW5xzds12` (PDF foto), DJK `19yYMOfUtcr7W0RGl_9WZqyziPJ-BbKph` (satu file `DJK MP Service DD-DD Mon YYYY.txt`, beberapa hari). Cari dengan `title contains '<YYYYMMDD>'` (hasil berhalaman; cari juga per SC).
+Folder Drive (ID): SILOG `1wYTPvr3lVkMQ5JTfJhb4gVbj4umzVV77`, DHJ `1R_LxelCUw9Ah-uHnNPvtF2K5NxsywXx_`, TPE `1qyWFJOL-gz-WBKBS59f1GzvKBZS3Hsy3`, WME `1jBrF1vlpOg24nS47e0Takv9hjpcxBKdF`, WKP `10U6H4n-fTji42FcABm9uF10XOKm51dbH`, TODJO `1Ak9NOyQzC_Z5M3glkMuxGAOhp7fvmxJd`, BCP `1dniJsg_TSkxtWA_Ixqx5uLOvW5xzds12` (PDF foto), DJK `19yYMOfUtcr7W0RGl_9WZqyziPJ-BbKph` (satu file `DJK MP Service DD-DD Mon YYYY.txt`, beberapa hari). **BME belum memiliki ID folder di instruksi ini.** Cari dengan `title contains '<YYYYMMDD>'` (hasil berhalaman; cari juga per SC).
 
-## Sumber PDF (WME, WKP, BCP wajib lewat PDF)
+## Otomasi Attendance PDF
 
-Pada SC ini rincian posisi hanya dari Attendance PDF; Posting hanya untuk cek jumlah (`dailymp.py` melakukannya otomatis bila `<SC>_<YYYYMMDD>_Attendance.txt` ada di `/tmp/mp_att`, dan memberi peringatan bila belum ada).
+WME, WKP, dan BCP memakai PDF sebagai sumber rincian posisi; Posting hanya dipakai untuk cross-check jumlah. SILOG, TPE, dan DHJ memakai Posting sebagai sumber utama, sedangkan PDF dipakai untuk cross-check nama bila tersedia.
 
-Membuat file Attendance .txt, urut dari yang paling otomatis:
-1. **PDF ada di sandbox** (user mengunggah PDF ke chat, atau Claude Code/lokal): `python3 scripts/pdf_to_att.py <file.pdf> --out /tmp/mp_att/<SC>_<YYYYMMDD>_Attendance.txt`. Skrip memakai lapisan teks PDF bila ada, kalau tidak OCR (tesseract), mengenali tabel dari kepala kolom (mendukung dua tabel berdampingan), lalu melaporkan nomor urut yang hilang dan halaman ber-OCR rendah. Diuji pada PDF sintetis bersih: nama 98%, role 97%, nomor hilang terdeteksi. **Belum diuji pada scan/foto asli.**
-2. **PDF hanya di Drive** (chat claude.ai tidak bisa menyalin file Drive ke sandbox; `download_file_content` hanya mengembalikan base64 ke konteks, tidak bisa disimpan ke file): baca `read_file_content`, tulis ulang ke format `Nama | Role | PT/CV`. Terbukti jalan untuk WKP dan TPE 30 Sep (foto WhatsApp terbaca cukup baik; nama/posisi tetap perlu verifikasi). OCR Drive sering melewatkan halaman; sebutkan nomor yang hilang, jangan mengarang angka.
-3. **Tulisan tangan (BCP) atau OCR rendah**: gambar halaman dari `--pages-dir` dibaca visual oleh Claude (mahal token), hasilnya ditulis ke format yang sama dan diberi label "dibaca visual, perlu verifikasi".
+### Prasyarat lokal
 
-## Alur ideal (satu perintah)
+Jalankan dari folder `Daily mp-v10/skills/daily-mp`:
 
-1. Ambil Posting .txt (dan Attendance PDF) dari Drive. Simpan Posting di `/tmp/mp/`.
-2. Untuk SILOG, TPE, DHJ: baca PDF lewat `read_file_content`, tulis ulang jadi `<SC>_<YYYYMMDD>_Attendance.txt` di `/tmp/mp_att/`, satu orang per baris `Nama [Role] PT/CV` (lihat docstring `scripts/crosscheck_pdf.py`).
-3. Jalankan (tampil dulu, tanpa Excel):
-   `python3 scripts/dailymp.py --dir /tmp/mp --date YYYY-MM-DD --xc --att-dir /tmp/mp_att --compact`; setelah user setuju tambahkan `--xlsx`.
-   Hasil: tabel rekap, catatan (termasuk peringatan validasi), laporan cross-check, blok TSV, dan Excel `/mnt/user-data/outputs/Daily_MP_YYYYMMDD.xlsx` (sheet "Daily MP" + sheet "Catatan").
-4. Tanyakan role baru ke user (jangan menebak), lalu kirim Excel dengan `present_files`.
+```bash
+python3 -m pip install -r requirements-pdf.txt
+```
+
+Untuk OCR diperlukan executable Poppler (`pdftoppm`) dan Tesseract yang ada di `PATH`. Pada Debian/Ubuntu/WSL: `sudo apt-get install poppler-utils tesseract-ocr`. Di Windows, pasang keduanya dan tambahkan folder `bin` ke `PATH`. PDF teks dapat diproses tanpa OCR; halaman hanya dirender jika lapisan teksnya gagal menghasilkan baris tabel.
+
+### Jalur pemrosesan
+
+1. **PDF tersedia lokal/di sandbox**: proses dengan `python3 scripts/pdf_to_att.py <file.pdf> --out /tmp/mp_att/<SC>_<YYYYMMDD>_Attendance.txt --pages-dir /tmp/mp_pages/<SC>_<YYYYMMDD>`. Parser memakai posisi teks dari `pdfplumber`, mendukung dua tabel berdampingan, lalu mencoba OCR lokal hanya pada halaman yang tidak menghasilkan baris. Format hasil tetap `Nama | Role | PT/CV`.
+2. **PDF hanya dapat dibaca dari Drive**: jika konektor hanya memberikan OCR text dan PDF tidak bisa disimpan ke sandbox, susun baris `Nama | Role | PT/CV` dari hasil halaman. Jangan mengklaim pemrosesan lokal. Catat halaman sumber dan halaman yang tidak terbaca; jangan mengarang nama atau angka.
+3. **Halaman kosong, nomor urut hilang, OCR confidence <60, atau tulisan tangan**: periksa gambar halaman di `--pages-dir` secara visual. Laporkan hasil PDF sebagai provisional sampai halaman bermasalah diverifikasi. Nomor urut yang hilang adalah indikasi baris terlewat, bukan bukti pasti halaman PDF hilang.
+
+Skrip menampilkan jumlah halaman yang diproses lewat teks/OCR, halaman tanpa baris, confidence OCR rendah, dan nomor urut yang tidak muncul. Bawa semua peringatan itu ke bagian Catatan rekap; jangan hanya menyimpan file `.txt`. Tanda tangan tidak dipakai untuk menentukan hadir/tidak hadir, sehingga daftar PDF adalah roster/batas atas, bukan bukti kehadiran.
+
+## Alur harian
+
+1. Tentukan tanggal zona Jakarta. Cari file per SC di Drive dengan paginasi dan nama/tanggal yang sesuai; simpan Posting ke `/tmp/mp/`. Jangan mencari BME sebelum folder Drive dan sumbernya dikonfirmasi.
+2. Siapkan Attendance sesuai tabel sumber per SC. Untuk PDF lokal, jalankan `pdf_to_att.py`; untuk PDF Drive-only, transkripsikan hasil baca ke file pipa. Simpan Attendance di `/tmp/mp_att/` dengan nama `<SC>_<YYYYMMDD>_Attendance.txt`.
+3. Dari folder skill, jalankan satu runner berikut untuk mempertahankan mode laporan yang sama:
+   - Satu hari: `bash scripts/run_daily_mp.sh [--excel] YYYY-MM-DD`
+   - Tanggal terakhir yang tersedia: `bash scripts/run_daily_mp.sh [--excel]`
+   - Rentang: `bash scripts/run_daily_mp.sh [--excel] YYYY-MM-DD YYYY-MM-DD`
+   Tanpa `--excel`, tampilkan dulu tabel ringkas, peringatan, dan cross-check. Jangan membuat Excel sampai pengguna menulis `excel` atau menyetujui tawaran.
+4. Tampilkan role baru dan data PDF yang belum terverifikasi untuk dikonfirmasi. Setelah mapping dikonfirmasi, jalankan ulang dengan `--map "Role=Posisi"`; simpan aturan persisten hanya setelah user menginstruksikan.
+5. Bila diminta/disetujui, runner membuat Excel; periksa sheet `Daily MP` dan `Catatan`, lalu kirim dengan `present_files`.
 
 Opsi lain: `--detail` (nama per posisi), `--summary` (total per hari), `--map "Role=Posisi"` (override sementara, termasuk toggle SM, mis. `--map "SM=Construction Manager"`), `--dedup-threshold 0.85`, `--dedup-scope section|category`.
 
-**Validasi otomatis** (muncul sebagai baris ⚠ di Catatan): file kosong, hari di header tidak cocok dengan tanggalnya, tanggal header beda dengan nama file, total WME/WKP sama persis dengan hari sebelumnya, total di teks tidak ditemukan.
+**Validasi Posting otomatis** (muncul sebagai baris ⚠ di Catatan): file kosong, hari di header tidak cocok dengan tanggalnya, tanggal header beda dengan nama file, total WME/WKP sama persis dengan hari sebelumnya, total di teks tidak ditemukan. Validasi halaman/confidence PDF berasal dari output `pdf_to_att.py`; pastikan ikut disalin ke Catatan. File Attendance tanpa baris terbaca bukan 0 orang dan tidak boleh dipakai untuk menghitung PDF-primary.
 
 **Deduplikasi**: (1) nama dan posisi sama = hapus; (2) nama mirip >= 85% di kategori sama = hapus **hanya bila di seksi/lokasi yang sama** (default `--dedup-scope section`); mirip lintas lokasi hanya diberi peringatan karena bisa orang berbeda (contoh: Rizal di Tim Pulling Cable dan M. Rizal di Admin Building, keduanya ada di PDF); (3) nama mirip di bawah ambang dan nama sama beda posisi = peringatan cek manual. Untuk kembali ke aturan lama: `--dedup-scope category`.
 
@@ -99,7 +115,8 @@ Jika output memuat bagian **PERLU KONFIRMASI**, itu berarti ada role/seksi yang 
 | SILOG, TPE, DHJ | Posting.txt | Attendance PDF |
 | WME, WKP, BCP | **Attendance PDF** (rincian per posisi) | jumlah di Posting.txt (BCP: tidak ada Posting) |
 | DJK Service | Posting.txt saja | tidak ada |
-| TODJO, BME | menunggu aturan dari user | - |
+| TODJO | menunggu konfirmasi kebijakan sumber dan pemetaan role | - |
+| BME | belum dapat diproses otomatis: sumber dan folder Drive belum dikonfirmasi | - |
 
 **WME dari PDF**: PDF berisi roster tercetak, yaitu staf nomor 1-31 dan pekerja nomor 1-154, jadi jumlah di PDF adalah batas atas (tanda tangan tidak terbaca OCR). Klasifikasi memakai `sc_map.json` bagian WME (Forman = Foreman, Skill Matecon/Logistic dan Checker = Skilled Workers, Survey = Surveyor, Housekeeping dan Helper = Common Labor, Driver dan Docon = Staff). Hitung per nomor baris, lalu bandingkan dengan total Indirect/Direct di Posting. Jika OCR tidak memuat semua nomor (sering melewatkan halaman), sebutkan halaman yang hilang, jangan mengarang angka, dan minta user mengunggah PDF-nya langsung. Selalu cek juga hari vs tanggal di Posting (contoh: "Friday, 26 September 2026" padahal 26 Sep 2026 hari Sabtu) dan total yang identik antar hari.
 
@@ -113,8 +130,17 @@ Ringkasan yang membedakan antar SC:
 - **DHJ**: PM = Construction Manager; Erector, Civil, Welder = Skilled Workers; Helper = Common Labor; Helper/Inspector Scaffolder = Scaffolder.
 - **WME**: Site Manager = Construction Manager; Planning/Piping/Lifting Eng = Site Engineer; Housekeeping, Helper = Common Labor; SPV HR/GA, SPV Finance, Driver, Docon, Matecon = Staff (tetapi SPV lain = Supervisor).
 - **WKP**: SM = Construction Manager; Warehouse dan ADM Project = Staff; ADM QC dan QC Field = QA/QC.
-- **DJK Service**: baris khusus **Land 1** (Team Electrical, Team 5R HSE, Night Shift) dan **Land 2** (Warehouse); SPV = Supervisor. Baris Land 1/Land 2 hanya muncul di tabel bila DJK punya data.
+- **DJK Service**: kode mengklasifikasikan SPV/Supervisor sebagai Supervisor, seksi yang memuat Warehouse sebagai Land 2, dan semua data DJK lainnya sebagai Land 1. Instruksi sumber menyebut Team Electrical, Team 5R HSE, dan Night Shift untuk Land 1; pastikan default Land 1 untuk semua data lain memang keputusan yang dimaksud.
 - **TODJO, BCP, BME**: belum ada pemetaan di file, memakai aturan umum "Nama Lain" (SM = Construction Manager, Helper/Driver/Housekeeping = Common Labor).
+
+### Konfirmasi aturan yang belum final
+
+Pemetaan umum yang berjalan di skrip tidak otomatis berarti keputusan owner sudah dikonfirmasi. Tandai hasil berikut sebagai provisional sampai aturan disepakati:
+- **TODJO**: parser khusus membaca bagian `Man Power`, `Crew`, dan `Tidak Berangkat`, tetapi role memakai pemetaan umum. Konfirmasi kategori role pada bagian Crew dan apakah fallback umum boleh dipakai.
+- **BCP**: sumber utama PDF, belum ada map khusus; role yang dikenali memakai pemetaan umum, role lain muncul sebagai role baru. PDF tulisan tangan memerlukan verifikasi visual. Konfirmasi apakah pemetaan umum boleh dipakai.
+- **BME**: belum ada ID folder Drive, kebijakan sumber, atau map khusus. Jangan mengambil data atau menganggap total sebagai final sebelum ketiganya dikonfirmasi.
+- **DJK**: konfirmasi apakah semua entri non-SPV selain Warehouse memang masuk Land 1.
+- **WME**: instruksi menyebut roster staf 1-31 dan pekerja 1-154, tetapi skrip belum memvalidasi rentang itu terpisah dan signature tidak menentukan kehadiran. Konfirmasi apakah jumlah roster tersebut berlaku untuk setiap PDF dan apakah yang dibutuhkan roster atau hanya yang tanda tangan.
 
 Untuk mengubah pemetaan: minta user memperbarui `Detail_SCs.xlsx`, lalu bangun ulang `sc_map.json` dari sheet "Pemetaan Posisi" (satu token per role, huruf kecil, pisah koma) atau edit langsung `sc_map.json`.
 

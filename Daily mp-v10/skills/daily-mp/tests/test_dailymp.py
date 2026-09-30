@@ -1,7 +1,8 @@
 """Jalankan: python3 -m unittest discover -s tests   (dari folder skill)"""
 import os, sys, unittest, tempfile
+from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-import dailymp as M, crosscheck_pdf as X
+import dailymp as M, crosscheck_pdf as X, pdf_to_att as PDF
 
 M.load_scmap()
 def cls(sc, role, section=""):
@@ -65,6 +66,9 @@ class Crosscheck(unittest.TestCase):
     def test_absen_dikenali(self):
         rep = X.report("TPE", "2026-09-30", [{"name": "Junaidi", "role": "Scaffolder", "section": "-"}], None, [], None, ["JUNAIDI ABSEN"])
         self.assertIn("tercatat ABSEN", rep)
+    def test_folder_attendance_belum_ada(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(X.find_attendance(os.path.join(d, "missing"), "WME", "2026-09-28"))
 
 class SumberPDF(unittest.TestCase):
     def test_format_pipa_dan_klasifikasi_wme(self):
@@ -73,10 +77,65 @@ class SumberPDF(unittest.TestCase):
         self.assertEqual([cls("WME", x["role"]) for x in p], ["Construction Manager", "Surveyor", "Skilled Workers"])
     def test_pdf_source_dan_cek_posting(self):
         with tempfile.TemporaryDirectory() as d:
-            open(os.path.join(d, "WME_20260928_Attendance.txt"), "w").write("A | Fitter | PT. WME\nB | Helper | PT. WME\nC | Docon | PT. WME\n")
+            with open(os.path.join(d, "WME_20260928_Attendance.txt"), "w", encoding="utf-8") as source:
+                source.write("A | Fitter | PT. WME\nB | Helper | PT. WME\nC | Docon | PT. WME\n")
             M.ATT_DIR[0] = d
             counts, notes, _ = M.pdf_source("WME", "2026-09-28", {"status": "summary", "summary": {"indirect": 1, "direct": 1, "total": 2}})
             self.assertEqual((counts["Skilled Workers"], counts["Common Labor"], counts["Staff"]), (1, 1, 1))
             self.assertIn("selisih total +1", notes[0]); M.ATT_DIR[0] = None
+    def test_pdf_tanpa_baris_tidak_dihitung_nol(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "WME_20260928_Attendance.txt"), "w", encoding="utf-8"):
+                pass
+            M.ATT_DIR[0] = d
+            try:
+                res = {s: {} for s in M.SUBS}
+                res["WME"]["2026-09-28"] = {"status": "summary", "summary": {"indirect": 1, "direct": 1, "total": 2}}
+                table, notes, _ = M.build(res, "2026-09-28", False)
+                self.assertEqual(table[0][2][M.SUBS.index("WME")], "n/a")
+                self.assertTrue(any("hasil bukan 0 orang" in note for note in notes))
+            finally:
+                M.ATT_DIR[0] = None
+
+class PDFExtraction(unittest.TestCase):
+    def test_ocr_fallback_when_text_layer_has_no_parseable_table(self):
+        text_words = [dict(t=f"word{i}", x=i, y=10, w=5, h=8, c=100) for i in range(45)]
+        ocr_words = [
+            dict(t="No", x=5, y=10, w=10, h=10, c=95),
+            dict(t="Name", x=20, y=10, w=30, h=10, c=95),
+            dict(t="Position", x=100, y=10, w=45, h=10, c=95),
+            dict(t="PT/CV", x=200, y=10, w=35, h=10, c=95),
+            dict(t="Signature", x=300, y=10, w=45, h=10, c=95),
+            dict(t="1", x=5, y=30, w=5, h=10, c=95),
+            dict(t="Alice", x=20, y=30, w=30, h=10, c=95),
+            dict(t="Fitter", x=100, y=30, w=30, h=10, c=95),
+            dict(t="WME", x=200, y=30, w=25, h=10, c=95),
+        ]
+        with mock.patch.object(PDF, "words_from_text_layer", return_value=(text_words, 400)), \
+             mock.patch.object(PDF, "render_page", return_value="page.png") as render, \
+             mock.patch.object(PDF, "words_from_ocr", return_value=(ocr_words, 400)):
+            records, source, _ = PDF.extract_page(None, "input.pdf", 1, 300, tempfile.gettempdir())
+        self.assertEqual([(row["name"], row["role"], row["pt"]) for row in records], [("Alice", "Fitter", "WME")])
+        self.assertEqual(source, "ocr")
+        render.assert_called_once()
+    def test_valid_text_table_does_not_render_page(self):
+        text_words = [
+            dict(t="No", x=5, y=10, w=10, h=10, c=100),
+            dict(t="Name", x=20, y=10, w=30, h=10, c=100),
+            dict(t="Position", x=100, y=10, w=45, h=10, c=100),
+            dict(t="PT/CV", x=200, y=10, w=35, h=10, c=100),
+            dict(t="Signature", x=300, y=10, w=45, h=10, c=100),
+            dict(t="1", x=5, y=30, w=5, h=10, c=100),
+            dict(t="Alice", x=20, y=30, w=30, h=10, c=100),
+            dict(t="Fitter", x=100, y=30, w=30, h=10, c=100),
+            dict(t="WME", x=200, y=30, w=25, h=10, c=100),
+        ]
+        with mock.patch.object(PDF, "words_from_text_layer", return_value=(text_words, 400)), \
+             mock.patch.object(PDF, "render_page") as render:
+            records, source, image = PDF.extract_page(None, "input.pdf", 1, 300, tempfile.gettempdir())
+        self.assertEqual(len(records), 1)
+        self.assertEqual(source, "text")
+        self.assertIsNone(image)
+        render.assert_not_called()
 
 if __name__ == "__main__": unittest.main()

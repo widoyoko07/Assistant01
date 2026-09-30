@@ -363,7 +363,10 @@ def pdf_source(s, d, r):
     import crosscheck_pdf as X
     f = X.find_attendance(ATT_DIR[0], s, d)
     if not f: return None
-    people, _ = X.parse_att(open(f, encoding="utf-8", errors="ignore").read(), s)
+    with open(f, encoding="utf-8", errors="ignore") as source:
+        people, _ = X.parse_att(source.read(), s)
+    if not people:
+        return None, [f"⚠ **{s}**: Attendance file ditemukan tetapi tidak ada baris roster yang terbaca; hasil bukan 0 orang. Periksa PDF/OCR sebelum memakai angka."], {}
     CUR[0] = s; counts, newr, tp = {}, {}, {"Indirect": 0, "Direct": 0}
     tipe = {p: t for t, p in ROWS}
     for p in people:
@@ -384,6 +387,9 @@ def build(res, d, detail):
         if s in PDF_PRIMARY and ATT_DIR[0]:
             got = pdf_source(s, d, r)
             if got:
+                if got[0] is None:
+                    cols[s] = ("missing", None); notes += got[1]
+                    continue
                 cols[s] = ("ok", got[0]); notes += got[1]
                 for k, v in got[2].items(): newroles.setdefault(k, {}).setdefault(s, []).extend(v)
                 continue
