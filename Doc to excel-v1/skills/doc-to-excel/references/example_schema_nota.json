@@ -1,0 +1,7 @@
+{"sheet":"Nota Material","number_locale":"id","dedupe_key":["tanggal","uraian"],"totals":["jumlah"],
+ "columns":[
+  {"key":"tanggal","header":"Tanggal","type":"date","required":true},
+  {"key":"uraian","header":"Uraian","type":"text","required":true,"width":32},
+  {"key":"qty","header":"Qty","type":"integer","min":0},
+  {"key":"harga","header":"Harga Satuan","type":"number","format":"#,##0"},
+  {"key":"jumlah","header":"Jumlah","type":"number","format":"#,##0"}]}
