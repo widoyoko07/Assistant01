@@ -1,5 +1,5 @@
 """Jalankan: python3 -m unittest discover -s tests   (dari folder skill)"""
-import os, sys, unittest, tempfile
+import os, sys, unittest, tempfile, subprocess
 from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import dailymp as M, crosscheck_pdf as X, pdf_to_att as PDF
@@ -98,6 +98,26 @@ class SumberPDF(unittest.TestCase):
                 M.ATT_DIR[0] = None
 
 class PDFExtraction(unittest.TestCase):
+    def test_no_data_report_does_not_show_zero_total(self):
+        date = "2026-09-29"
+        res = {s: {} for s in M.SUBS}
+        table, _, _ = M.build(res, date, False)
+        compact = M.md_compact(table, date, res)
+        self.assertIn("Belum ada data untuk seluruh subcon", compact)
+        self.assertNotIn("Total Manpower", compact)
+        self.assertNotIn("| 0 |", compact)
+        self.assertIn("Belum ada data untuk seluruh subcon", M.md(table, date))
+        self.assertIn("Belum ada data untuk seluruh subcon", M.tsv(table))
+
+    def test_empty_range_reports_missing_dates(self):
+        with tempfile.TemporaryDirectory() as d:
+            result = subprocess.run(
+                [sys.executable, M.__file__, "--dir", d, "--range", "2026-09-26", "2026-09-29"],
+                capture_output=True, text=True, check=True,
+            )
+        self.assertIn("Tidak ada data tanggal dalam rentang", result.stdout)
+        self.assertNotIn("| Tanggal |", result.stdout)
+
     def test_ocr_fallback_when_text_layer_has_no_parseable_table(self):
         text_words = [dict(t=f"word{i}", x=i, y=10, w=5, h=8, c=100) for i in range(45)]
         ocr_words = [

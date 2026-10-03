@@ -454,9 +454,11 @@ def build(res, d, detail):
 
 def total(vals): return sum(v for v in vals if isinstance(v, int))
 def col_totals(table): return [total([r[2][i] for r in table]) for i in range(len(SUBS))]
+def has_data(table): return any(isinstance(v, int) for _, _, vals in table for v in vals)
 
 def md_compact(table, d, res):
     """Tabel ringkas untuk chat: hanya kolom SC yang ada data dan baris yang tidak nol."""
+    if not has_data(table): return f"## Daily MP - {d}\n\nBelum ada data untuk seluruh subcon: {', '.join(SUBS)}"
     keep = [i for i in range(len(SUBS)) if any(isinstance(r[2][i], int) or r[2][i] == "-" for r in table)]
     rows = [(t, p, [v[i] for i in keep]) for t, p, v in table if any(isinstance(v[i], int) and v[i] for i in keep)]
     head = "| Tipe | Posisi | " + " | ".join(SUBS[i] for i in keep) + " | Total |"
@@ -469,6 +471,7 @@ def md_compact(table, d, res):
     return "\n".join(out)
 
 def md(table, d):
+    if not has_data(table): return f"## Daily MP - {d}\n\nBelum ada data untuk seluruh subcon: {', '.join(SUBS)}"
     head = "| Tipe | Posisi | " + " | ".join(SUBS) + " | Total |"
     out = [f"## Daily MP - {d}", "", head, "|---|---|" + "---:|" * (len(SUBS) + 1)]
     for t, p, v in table:
@@ -478,6 +481,7 @@ def md(table, d):
     return "\n".join(out)
 
 def tsv(table):
+    if not has_data(table): return "Belum ada data untuk seluruh subcon: " + ", ".join(SUBS)
     lines = ["\t".join(["Tipe", "Posisi"] + SUBS + ["Total"])]
     for t, p, v in table: lines.append("\t".join([t, p] + [str(x) for x in v] + [str(total(v))]))
     ct = col_totals(table)
@@ -530,24 +534,37 @@ if __name__ == "__main__":
     res = load_dir(a.dir)
     dates = sorted({d for s in SUBS for d in res[s]})
     if a.summary:
+        if not dates:
+            print("Tidak ada data tanggal untuk diringkas.")
+            raise SystemExit
         print("| Tanggal | " + " | ".join(SUBS) + " | Total |\n|---|" + "---:|" * (len(SUBS) + 1))
         for d in dates:
             table, _, _ = build(res, d, False); ct = col_totals(table)
+            grand = sum(ct) if has_data(table) else "n/a"
             print(f"| {d} | " + " | ".join(str(x) if res[s].get(d) and res[s][d]["status"] in ("ok", "summary") else "n/a"
-                                               for s, x in zip(SUBS, ct)) + f" | {sum(ct)} |")
+                                               for s, x in zip(SUBS, ct)) + f" | {grand} |")
         raise SystemExit
     if a.range:
         sel = [x for x in dates if a.range[0] <= x <= a.range[1]]
+        if not sel:
+            print(f"Tidak ada data tanggal dalam rentang {a.range[0]} sampai {a.range[1]}.")
+            raise SystemExit
+        xlsx_count = 0
         print("| Tanggal | " + " | ".join(SUBS) + " | Total |\n|---|" + "---:|" * (len(SUBS) + 1))
         for x in sel:
             table, notes, _ = build(res, x, False); ct = col_totals(table)
-            print(f"| {x} | " + " | ".join(str(v) if res[s].get(x) and res[s][x]["status"] in ("ok", "summary") else "n/a" for s, v in zip(SUBS, ct)) + f" | {sum(ct)} |")
+            available = has_data(table)
+            grand = sum(ct) if available else "n/a"
+            print(f"| {x} | " + " | ".join(str(v) if res[s].get(x) and res[s][x]["status"] in ("ok", "summary") else "n/a" for s, v in zip(SUBS, ct)) + f" | {grand} |")
             for n in notes:
                 if "⚠" in n or "kosong" in n: print(f"  - {x}: {n.replace('**', '')}")
-            if a.xlsx:
+            if a.xlsx and available:
                 out = os.path.join("/mnt/user-data/outputs" if os.path.isdir("/mnt/user-data/outputs") else ".", f"Daily_MP_{x.replace('-', '')}.xlsx")
                 to_xlsx(out, table, x, [n.replace("**", "") for n in notes])
-        if a.xlsx: print(f"\nExcel per hari ditulis untuk {len(sel)} tanggal.")
+                xlsx_count += 1
+            elif a.xlsx:
+                print(f"  - {x}: Excel tidak dibuat karena tidak ada data manpower yang terbaca.")
+        if a.xlsx: print(f"\nExcel per hari ditulis untuk {xlsx_count} dari {len(sel)} tanggal.")
         raise SystemExit
     d = a.date or (dates[-1] if dates else None)
     if not d: raise SystemExit("Tidak ada file data di folder.")
@@ -570,6 +587,8 @@ if __name__ == "__main__":
             xc.append(X.report(sc, d, att, ast, dedupe(r["people"])[0], r["stated"], r["absent"]))
         print("\n" + "\n\n".join(xc))
     if not a.compact: print("\n### Blok TSV (copy, paste ke Excel)\n\n```\n" + tsv(table) + "\n```")
-    if a.xlsx:
+    if a.xlsx and has_data(table):
         path = a.xlsx if a.xlsx != "AUTO" else os.path.join("/mnt/user-data/outputs" if os.path.isdir("/mnt/user-data/outputs") else ".", f"Daily_MP_{d.replace('-', '')}.xlsx")
         to_xlsx(path, table, d, [n.replace("**", "") for n in notes] + [x.replace("**", "").replace("### ", "") for x in xc]); print(f"\nExcel: {path}")
+    elif a.xlsx:
+        print("\nExcel tidak dibuat karena tidak ada data manpower yang terbaca.")
