@@ -1,0 +1,26 @@
+{
+ "_petunjuk": "Konfigurasi default proyek Z1 (A2O Bioreactor). Ubah lewat --config file lain; jangan ubah file ini tanpa diminta user.",
+ "colors": {"tray": [1, 0, 1], "conduit": [0, 1, 0]},
+ "color_tol": 0.05,
+ "px_per_pt": 6,
+ "close_mm": {"tray": 423, "conduit": 212},
+ "tray_widths_mm": [200, 700],
+ "content_xmax_frac": 0.9,
+ "spacing_range_m": [1.0, 3.0],
+ "grid_gaps_mm": [
+  [6500, 6400, 6400, 6400, 6400, 6400, 6400, 6500],
+  [7500, 7000, 8000, 6300],
+  [6300, 8000, 7000, 7500]
+ ],
+ "batch_threshold": 40,
+ "assume_units": "mm",
+ "layers": {},
+ "layer_widths": {},
+ "rung_factor": 1.5,
+ "support_letter_width_mm": {"A":100,"B":200,"C":300,"D":400,"E":500,"F":600,"G":700,"H":800,"I":900,"J":1000,"K":400},
+ "roles": {},
+ "scales": {},
+ "tray_from": ["plan"],
+ "conduit_horizontal_from": ["plan"],
+ "conduit_vertical_from": ["section"]
+}
