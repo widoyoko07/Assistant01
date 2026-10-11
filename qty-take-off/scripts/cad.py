@@ -13,6 +13,7 @@ ACI = {"tray": 6, "conduit": 3}          # magenta, hijau (cadangan bila nama la
 
 
 class ConvertError(Exception): pass
+class CadGeometryError(ValueError): pass
 
 
 # ------------------------------------------------------------ konversi DWG -> DXF
@@ -82,8 +83,13 @@ def segments(e):
     t = e.dxftype()
     if t == "LINE": return [(tuple(e.dxf.start), tuple(e.dxf.end))]
     if t in ("LWPOLYLINE", "POLYLINE", "ARC", "SPLINE", "ELLIPSE"):
-        try: return [(tuple(a), tuple(b)) for a, b in _flat_len(e)]
-        except Exception: return []
+        try:
+            result = [(tuple(a), tuple(b)) for a, b in _flat_len(e)]
+        except Exception as exc:
+            raise CadGeometryError(f"Gagal membaca geometri {t} handle={e.dxf.get('handle', '?')}: {exc}") from exc
+        if not result:
+            raise CadGeometryError(f"Geometri {t} handle={e.dxf.get('handle', '?')} tidak menghasilkan segmen.")
+        return result
     return []
 
 
@@ -92,11 +98,14 @@ def walk(layout, depth=0, parent_layer=None, max_depth=4):
     for e in layout:
         t = e.dxftype()
         lay = e.dxf.layer if e.dxf.layer != "0" or parent_layer is None else parent_layer
-        if t == "INSERT" and depth < max_depth:
+        if t == "INSERT" and depth >= max_depth:
+            raise CadGeometryError(f"Blok bertingkat melebihi batas {max_depth}: {e.dxf.name} handle={e.dxf.get('handle', '?')}")
+        if t == "INSERT":
             try:
                 for v in e.virtual_entities():
                     yield from walk([v], depth + 1, e.dxf.layer if e.dxf.layer != "0" else parent_layer)
-            except Exception: pass
+            except Exception as exc:
+                raise CadGeometryError(f"Gagal membongkar blok {e.dxf.name} handle={e.dxf.get('handle', '?')}: {exc}") from exc
         elif t != "INSERT": yield e, lay
 
 
@@ -144,15 +153,25 @@ def measure(path, cfg):
     doc = load(path); msp = doc.modelspace(); k, uw = unit_factor_to_m(doc, cfg.get("assume_units", "mm"))
     tray_re = re.compile(cfg.get("layers", {}).get("tray", TRAY_RE.pattern), re.I)
     cond_re = re.compile(cfg.get("layers", {}).get("conduit", CONDUIT_RE.pattern), re.I)
-    seen = set(); dup = collections.defaultdict(float)
+    seen = set(); dup = collections.defaultdict(float); unsupported = collections.Counter()
     tray = collections.defaultdict(lambda: {"total": 0.0, "short": 0.0, "long": 0.0, "n": 0}); ch = cv = 0.0; flags = []
     if uw: flags.append(uw)
+    for layer in doc.layers:
+        name = layer.dxf.name
+        if layer.dxf.color == ACI["tray"] and not tray_re.search(name):
+            flags.append(f"layer {name} berwarna magenta tetapi belum dipetakan sebagai tray; cek hasil scan")
+        elif layer.dxf.color == ACI["conduit"] and not cond_re.search(name):
+            flags.append(f"layer {name} berwarna hijau tetapi belum dipetakan sebagai conduit; cek hasil scan")
     maxw = max(cfg["tray_widths_mm"]) * 0.001 / k if k else 0     # lebar tray terbesar dalam satuan gambar -> m
     for e, l in walk(msp):
         role = "tray" if tray_re.search(l) else "conduit" if cond_re.search(l) else None
         if role is None: continue
-        for a, b in segments(e):
-            key = tuple(sorted((tuple(round(c, 1) for c in a), tuple(round(c, 1) for c in b))))
+        segs = segments(e)
+        if not segs:
+            unsupported[(role, e.dxftype())] += 1
+            continue
+        for a, b in segs:
+            key = (role, tuple(sorted((tuple(round(c * k, 3) for c in a), tuple(round(c * k, 3) for c in b)))))
             L = dist3(a, b) * k
             if key in seen: dup[role] += L; continue                # garis ganda di CAD (bug umum) dibuang
             seen.add(key)
@@ -171,8 +190,14 @@ def measure(path, cfg):
         if not w: flags.append("lebar tray tidak terbaca dari nama layer; isi layer_widths di config")
     for r, v in dup.items():
         if v > 0.5: flags.append(f"{r}: {v:.1f} m garis ganda (koordinat sama) dibuang")
+    for (role, entity), count in unsupported.items():
+        flags.append(f"{role}: {count} entitas {entity} pada layer terukur belum didukung; hasil mungkin tidak lengkap")
     has_z = cv > 0
     if not has_z: flags.append("gambar 2D (tanpa selisih Z): conduit vertikal tidak ada di geometri; hitung dari elevasi/callout")
+    xrefs = [b.name for b in doc.blocks if b.block.dxf.get("flags", 0) & 4]
+    if xrefs: flags.append(f"XREF tidak dihitung: {', '.join(xrefs)}")
+    layouts = [ly.name for ly in doc.layouts if ly.name != "Model"]
+    if layouts: flags.append(f"paper space tidak dihitung: {', '.join(layouts)}")
     sup = collections.Counter(e.dxf.name.upper() for e in msp if e.dxftype() == "INSERT" and SUPPORT_RE.match(e.dxf.name))
     letters = cfg.get("support_letter_width_mm", {})
     supports = {n: {"qty": q, "letter": SUPPORT_RE.match(n).group(1).upper()} for n, q in sup.items()}

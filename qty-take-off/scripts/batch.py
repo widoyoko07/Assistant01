@@ -11,6 +11,10 @@ KEYWORDS = ("TANKS", "BUILDING", "ROOM", "HEADWORKS", "FACILITY", "CHAMBER", "FI
 SKIP_WORDS = re.compile(r"\b(PANELS?|AND|TRANSFORMERS?|CABLE|TRAY|CONDUIT|BUSDUCT|LAYOUT|FIELD|EQUIPMENTS?|INCLUDE|ROUTING|&)\b", re.I)
 
 
+class BatchStateError(RuntimeError):
+    pass
+
+
 def hist_measure(m, close_pt, px, mm_pt, thick_pt=0.6):
     """Garis tengah + histogram lebar lokal -> {lebar_mm_bin: meter}. Lebar = (lebar_pt - tebal garis) * mm/pt."""
     import cv2
@@ -66,11 +70,29 @@ def measure_page(p, row, cfg, drs, px, out):
 def run(pdf, cfg, out, budget=240, px=4):
     import pymupdf as fitz
     doc = fitz.open(pdf); n = len(doc); os.makedirs(os.path.join(out, "overlay"), exist_ok=True)
-    path = os.path.join(out, "pages.jsonl"); done = set()
+    path = os.path.join(out, "pages.jsonl"); run_path = os.path.join(out, "run.json")
+    manifest = T.source_manifest(pdf, cfg, mode="pdf-batch", px=px, page_count=n)
+    if os.path.exists(run_path):
+        try:
+            with open(run_path, encoding="utf-8") as fh: previous = json.load(fh)
+        except (OSError, json.JSONDecodeError) as e:
+            raise BatchStateError(f"Metadata batch tidak terbaca ({run_path}): {e}") from e
+        if previous != manifest:
+            raise BatchStateError("Checkpoint batch berasal dari file, konfigurasi, atau opsi berbeda. Gunakan folder output baru.")
+    elif os.path.exists(path):
+        raise BatchStateError("Checkpoint batch lama tidak memiliki run.json. Gunakan folder output baru agar hasil tidak tercampur.")
+    else:
+        with open(run_path, "w", encoding="utf-8") as fh: json.dump(manifest, fh, ensure_ascii=False, indent=1)
+    done = set()
     if os.path.exists(path):
-        for ln in open(path, encoding="utf-8"):
-            try: done.add(json.loads(ln)["row"]["sheet"])
-            except Exception: pass
+        with open(path, encoding="utf-8") as fh:
+            for line_no, ln in enumerate(fh, 1):
+                try: sheet = json.loads(ln)["row"]["sheet"]
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    raise BatchStateError(f"Checkpoint rusak pada baris {line_no}; gunakan folder output baru.") from e
+                if not isinstance(sheet, int) or sheet < 1 or sheet > n or sheet in done:
+                    raise BatchStateError(f"Nomor halaman checkpoint tidak valid pada baris {line_no}; gunakan folder output baru.")
+                done.add(sheet)
     t0 = time.time()
     with open(path, "a", encoding="utf-8") as fh:
         for i in range(1, n + 1):
@@ -81,7 +103,7 @@ def run(pdf, cfg, out, budget=240, px=4):
             fh.write(json.dumps({"row": row, "rec": rec}, ensure_ascii=False) + "\n"); fh.flush(); done.add(i)
     print(f"Progres: {len(done)}/{n} halaman ({len(done) * 100 // n}%).")
     if len(done) < n: print("BELUM selesai: jalankan perintah yang sama lagi untuk melanjutkan (hasil tersimpan di pages.jsonl)."); return None
-    res = aggregate(out, cfg, os.path.basename(pdf)); print_sets(res); return res
+    res = aggregate(out, cfg, os.path.basename(pdf), manifest); print_sets(res); return res
 
 
 def set_name(rows):
@@ -90,7 +112,7 @@ def set_name(rows):
     return "(tanpa nama)"
 
 
-def aggregate(out, cfg, fname=""):
+def aggregate(out, cfg, fname="", manifest=None):
     recs = [json.loads(l) for l in open(os.path.join(out, "pages.jsonl"), encoding="utf-8")]; recs.sort(key=lambda r: r["row"]["sheet"])
     n = len(recs); idx = [r["row"]["sheet"] for r in recs if r["row"]["is_index"]]
     starts = sorted({max(1, i - 1) for i in idx}) or [1]
@@ -128,7 +150,7 @@ def aggregate(out, cfg, fname=""):
         if len(grp) > 1 and key:
             for g in grp[:-1]: g["include"] = False; g["flags"].append(f"DUPLIKAT: judul sama muncul {len(grp)}x di PDF (set {', '.join(str(x['set']) for x in grp)}); default hanya set terakhir dihitung, KONFIRMASI revisi yang benar")
             grp[-1]["flags"].append(f"versi terakhir dari {len(grp)} set berjudul sama (default dihitung)")
-    res = {"file": fname, "source": "pdf-batch", "pages": n, "sets": sets}
+    res = {"file": fname, "source": "pdf-batch", "manifest": manifest, "pages": n, "sets": sets}
     with open(os.path.join(out, "plan.json"), "w", encoding="utf-8") as fh: json.dump(res, fh, ensure_ascii=False, indent=1)
     return res
 
@@ -167,12 +189,13 @@ def reliability(s):
     return "Cek support OK" if s["checks"] else "Tanpa data"
 
 
-def write_excel(out):
+def write_excel(out, expected_manifest):
     """Rekap per area (baris) x ukuran (kolom): tray per lebar, conduit total. Rumus SUMIFS ke sheet 'Detail Set' (kolom Hitung Y/N)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter as CL
     res = json.load(open(os.path.join(out, "plan.json"), encoding="utf-8")); sets = res["sets"]
+    T.validate_plan_manifest(res, expected_manifest)
     found = {int(w) for s in sets for w in s["tray_m"]}
     first = [w for w in (700, 600, 500) if True]; rest = sorted((w for w in found if w not in first), reverse=True)
     widths = first + rest

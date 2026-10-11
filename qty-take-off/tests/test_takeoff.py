@@ -97,6 +97,16 @@ class Gerbang(unittest.TestCase):
         r = subprocess.run([sys.executable, s, "execute", f, "--out", d, "--confirm"], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0); self.assertTrue(os.path.exists(os.path.join(d, "Takeoff_Tray_Conduit.xlsx")))
 
+    def test_execute_menolak_dry_run_dari_file_berbeda(self):
+        d = tempfile.mkdtemp(); f1 = os.path.join(d, "a.pdf"); f2 = os.path.join(d, "b.pdf")
+        make_pdf(f1, title="PLAN AT EL+1000", scale=100, tray_mm=5000)
+        make_pdf(f2, title="PLAN AT EL+1000", scale=100, tray_mm=9000)
+        s = os.path.join(os.path.dirname(__file__), "..", "scripts", "takeoff.py")
+        subprocess.run([sys.executable, s, "plan", f1, "--out", d], check=True, capture_output=True)
+        r = subprocess.run([sys.executable, s, "execute", f2, "--out", d, "--confirm"], capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0); self.assertIn("tidak cocok", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(d, "Takeoff_Tray_Conduit.xlsx")))
+
 @unittest.skipUnless(os.environ.get("SD_TAKEOFF_PDF"), "set SD_TAKEOFF_PDF untuk regresi PDF asli")
 class PDFAsli(unittest.TestCase):
     def test_baseline_rfs020026_06(self):

@@ -8,7 +8,7 @@
 Anti-bug: skala dicek dua arah (label vs geometri grid); peran sheet dikonfirmasi user; tray = garis tengah
 (bukan jumlah garis); vertikal conduit = BATAS ATAS (belum dedup antar-section); overlay PNG untuk cek visual;
 cross-check jarak support. Angka tidak diketik ulang manual."""
-import argparse, collections, json, math, os, re, sys
+import argparse, collections, hashlib, json, math, os, re, sys
 import numpy as np
 
 PT_MM = 25.4 / 72.0                      # mm kertas per titik PDF
@@ -22,6 +22,32 @@ def load_config(path=None):
     cfg = json.load(open(os.path.join(HERE, "config.default.json"), encoding="utf-8"))
     if path: cfg.update(json.load(open(path, encoding="utf-8")))
     return cfg
+
+
+class PlanMismatchError(ValueError):
+    pass
+
+
+def source_manifest(path, cfg, **options):
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    config = json.dumps(cfg, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return {
+        "file": os.path.basename(path),
+        "sha256": digest.hexdigest(),
+        "config_sha256": hashlib.sha256(config).hexdigest(),
+        "options": options,
+    }
+
+
+def validate_plan_manifest(result, expected):
+    if result.get("manifest") != expected:
+        raise PlanMismatchError(
+            "Sumber atau konfigurasi tidak cocok dengan dry-run. Jalankan plan ulang "
+            "di folder output yang sama sebelum execute."
+        )
 
 
 def iscol(c, t, tol=0.05):
@@ -227,7 +253,8 @@ def plan(pdf, cfg, out, only=None):
     for r in sheets:
         for w, v in r["tray_m"].items(): tray[w] += v
     for row in inv["sheets"]: sup.update(row["supports"]); legend.update(row["legend"])
-    res = {"file": inv["file"], "sheets": sheets, "tray_total_m": {w: round(float(v), 1) for w, v in tray.items()},
+    res = {"file": inv["file"], "manifest": source_manifest(pdf, cfg, mode="pdf"),
+           "sheets": sheets, "tray_total_m": {w: round(float(v), 1) for w, v in tray.items()},
            "conduit_h_total_m": round(sum(r["conduit_h_m"] for r in sheets), 1),
            "conduit_v_upper_m": round(sum(r["conduit_v_m"] for r in sheets), 1),
            "supports": sup, "checks": crosscheck(dict(tray), sup, legend, cfg)}
@@ -249,10 +276,11 @@ def print_plan(res):
     if fl: print("\nPeringatan:"); [print(f" - sheet {s}: {f}") for s, f in fl]
 
 
-def execute(out):
+def execute(out, expected_manifest):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     with open(os.path.join(out, "plan.json"), encoding="utf-8") as fh: res = json.load(fh)
+    validate_plan_manifest(res, expected_manifest)
     wb = Workbook(); ws = wb.active; ws.title = "Per Sheet"
     widths = sorted({w for r in res["sheets"] for w in r["tray_m"]}, key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else 0, x)) or ["200", "700"]
     ws.append(["Sheet", "Peran", "Skala 1:", "Status skala"] + [f"Tray {w}W (m)" if w.isdigit() else f"Tray {w} (m)" for w in widths] + ["Conduit horizontal (m)", "Conduit vertikal batas atas (m)", "Catatan"])
@@ -281,7 +309,8 @@ def plan_cad(path, cfg, out):
         try: dxf = cad.convert_dwg(path, out)
         except cad.ConvertError as e: raise SystemExit(f"GAGAL membaca DWG: {e}")
     rec, sup, legend = cad.measure(dxf, cfg)
-    res = {"file": os.path.basename(path), "sheets": [rec], "tray_total_m": dict(rec["tray_m"]), "conduit_h_total_m": rec["conduit_h_m"],
+    res = {"file": os.path.basename(path), "manifest": source_manifest(path, cfg, mode="cad"),
+           "sheets": [rec], "tray_total_m": dict(rec["tray_m"]), "conduit_h_total_m": rec["conduit_h_m"],
            "conduit_v_upper_m": 0.0 if not rec["conduit_v_m"] else rec["conduit_v_m"], "supports": sup, "source": "cad",
            "checks": crosscheck(dict(rec["tray_m"]), sup, legend, cfg)}
     with open(os.path.join(out, "plan.json"), "w", encoding="utf-8") as fh: json.dump(res, fh, ensure_ascii=False, indent=1)
@@ -309,6 +338,12 @@ def main():
                 except cad.ConvertError as e: raise SystemExit(f"GAGAL membaca DWG: {e}")
             print(json.dumps(cad.scan(f, cfg), ensure_ascii=False, indent=1)); return
         if a.cmd == "plan": print_plan(plan_cad(a.pdf, cfg, a.out)); return
+        if a.cmd == "execute":
+            if not a.confirm: sys.exit("Ditolak: execute hanya setelah user menyetujui hasil dry-run (tambahkan --confirm).")
+            if not os.path.exists(os.path.join(a.out, "plan.json")): sys.exit("plan.json tidak ada: jalankan plan dulu.")
+            try: execute(a.out, source_manifest(a.pdf, cfg, mode="cad"))
+            except PlanMismatchError as e: raise SystemExit(str(e))
+            return
     if a.pdf.lower().endswith(".pdf") and a.cmd in ("plan", "execute"):
         import pymupdf as fitz
         npages = len(fitz.open(a.pdf))
@@ -316,7 +351,10 @@ def main():
             import batch
             if a.cmd == "plan": batch.run(a.pdf, cfg, a.out, a.budget, a.px); return
             if not a.confirm: sys.exit("Ditolak: execute hanya setelah user menyetujui hasil dry-run (tambahkan --confirm).")
-            batch.write_excel(a.out); return
+            expected = source_manifest(a.pdf, cfg, mode="pdf-batch", px=a.px, page_count=npages)
+            try: batch.write_excel(a.out, expected)
+            except PlanMismatchError as e: raise SystemExit(str(e))
+            return
     if a.cmd == "inspect":
         inv = inspect(a.pdf, cfg)
         with open(os.path.join(a.out, "inventory.json"), "w", encoding="utf-8") as fh: json.dump(inv, fh, ensure_ascii=False, indent=1)
@@ -327,6 +365,7 @@ def main():
     else:
         if not a.confirm: sys.exit("Ditolak: execute hanya setelah user menyetujui hasil dry-run (tambahkan --confirm).")
         if not os.path.exists(os.path.join(a.out, "plan.json")): sys.exit("plan.json tidak ada: jalankan plan dulu.")
-        execute(a.out)
+        try: execute(a.out, source_manifest(a.pdf, cfg, mode="pdf"))
+        except PlanMismatchError as e: raise SystemExit(str(e))
 
 if __name__ == "__main__": main()

@@ -42,6 +42,32 @@ class CAD(unittest.TestCase):
     def test_satuan_meter(self):
         rec, _, _ = cad.measure(dxf(os.path.join(self.d, "e.dxf"), units=6), cfg())      # 6 = meter: nilai gambar dianggap meter
         self.assertGreater(rec["tray_m"]["700"], 1000)
+    def test_dedup_terpisah_per_role_dan_toleransi_meter(self):
+        path = os.path.join(self.d, "meter.dxf")
+        doc = ezdxf.new("R2018", setup=True); doc.units = 6
+        doc.layers.add("E-TRAY-700"); doc.layers.add("E-CONDUIT")
+        m = doc.modelspace()
+        m.add_line((0, 0), (10, 0), dxfattribs={"layer": "E-TRAY-700"})
+        m.add_line((0, 0), (10, 0), dxfattribs={"layer": "E-CONDUIT"})
+        m.add_line((0.0004, 0), (10.0004, 0), dxfattribs={"layer": "E-TRAY-700"})
+        doc.saveas(path)
+        rec, _, _ = cad.measure(path, cfg())
+        self.assertEqual(rec["tray_m"]["700"], 10.0)
+        self.assertEqual(rec["conduit_h_m"], 10.0)
+        self.assertTrue(any("garis ganda" in f for f in rec["flags"]))
+    def test_entitas_tidak_didukung_diberi_peringatan(self):
+        path = os.path.join(self.d, "unsupported.dxf")
+        doc = ezdxf.new("R2018", setup=True); doc.layers.add("E-TRAY-700")
+        doc.modelspace().add_text("label", dxfattribs={"layer": "E-TRAY-700"})
+        doc.saveas(path)
+        rec, _, _ = cad.measure(path, cfg())
+        self.assertTrue(any("entitas TEXT" in f and "tidak lengkap" in f for f in rec["flags"]))
+    def test_gagal_flattening_dilaporkan(self):
+        from unittest.mock import patch
+        entity = ezdxf.new("R2018").modelspace().add_arc((0, 0), 1, 0, 90)
+        with patch.object(cad, "_flat_len", side_effect=RuntimeError("broken geometry")):
+            with self.assertRaises(cad.CadGeometryError):
+                cad.segments(entity)
     def test_scan_menemukan_layer_dan_support(self):
         s = cad.scan(dxf(os.path.join(self.d, "f.dxf")), cfg()); roles = {l["layer"]: l["role_guess"] for l in s["layers"]}
         self.assertEqual((roles["E-TRAY-700"], roles["E-CONDUIT"]), ("tray", "conduit")); self.assertEqual(s["support_blocks"]["SUH-42GC"], 3); self.assertTrue(s["has_3d"])
@@ -58,5 +84,12 @@ class CAD(unittest.TestCase):
         self.assertNotEqual(subprocess.run([sys.executable, s, "execute", f, "--out", self.d], capture_output=True).returncode, 0)
         subprocess.run([sys.executable, s, "execute", f, "--out", self.d, "--confirm"], check=True, capture_output=True)
         self.assertTrue(os.path.exists(os.path.join(self.d, "Takeoff_Tray_Conduit.xlsx")))
+    def test_cli_execute_menolak_dxf_berbeda(self):
+        f1 = dxf(os.path.join(self.d, "first.dxf")); f2 = dxf(os.path.join(self.d, "second.dxf"), dup=False)
+        s = os.path.join(os.path.dirname(__file__), "..", "scripts", "takeoff.py")
+        subprocess.run([sys.executable, s, "plan", f1, "--out", self.d], check=True, capture_output=True)
+        r = subprocess.run([sys.executable, s, "execute", f2, "--out", self.d, "--confirm"], capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0); self.assertIn("tidak cocok", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.d, "Takeoff_Tray_Conduit.xlsx")))
 
 if __name__ == "__main__": unittest.main()

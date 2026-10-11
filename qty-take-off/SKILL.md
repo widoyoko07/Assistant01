@@ -37,17 +37,17 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 
 **5. Tanya satu kalimat**: "Jadikan Excel?" Tunggu jawaban.
 
-**6. Execute**: `python3 scripts/takeoff.py execute <file> --out /tmp/tk --confirm`, `recalc.py` skill xlsx (error 0), `present_files` `Takeoff_Tray_Conduit.xlsx`.
+**6. Execute**: `python3 scripts/takeoff.py execute <file> --out /tmp/tk --confirm`, `recalc.py` skill xlsx (error 0), `present_files` `Takeoff_Tray_Conduit.xlsx`. Skrip mengikat dry-run ke hash sumber, konfigurasi, dan opsi batch. Jika tidak cocok, jalankan plan lagi; gunakan folder output baru untuk checkpoint batch yang berbeda atau lama.
 
 **Mode batch (PDF gabungan banyak set, mis. 599 halaman)**: otomatis aktif bila halaman > 40 (atau `--batch`).
-- `python3 scripts/takeoff.py plan <pdf> --out /tmp/big --budget 200` lalu ulangi perintah yang sama sampai muncul tabel (checkpoint `pages.jsonl`, aman bila terhenti). Perkiraan 2-4 detik per halaman berwarna; 599 halaman sekitar 25 menit. Jalankan di background (`setsid nohup`) bila perlu dan pantau jumlah baris `pages.jsonl`.
+- `python3 scripts/takeoff.py plan <pdf> --out /tmp/big --budget 200` lalu ulangi perintah yang sama sampai muncul tabel (checkpoint `pages.jsonl` dengan metadata `run.json`, aman bila terhenti). Perkiraan 2-4 detik per halaman berwarna; 599 halaman sekitar 25 menit. Jalankan di background (`setsid nohup`) bila perlu dan pantau jumlah baris `pages.jsonl`. File, konfigurasi, atau opsi berbeda ditolak; gunakan folder output baru untuk run baru.
 - Set gambar dikelompokkan dari halaman DRAWING INDEX. Judul sama yang muncul berkali-kali = DUPLIKAT revisi; default hanya set terakhir dihitung, WAJIB konfirmasi revisi ke user.
 - Setiap set diberi status keandalan (cek support OK / gagal / tanpa cek / conduit kosong / halaman tidak terukur). Set tidak andal jangan dilaporkan sebagai angka final.
 - `execute --confirm` menulis `Rekap_Tray_Conduit_per_Area.xlsx`: baris = area, kolom = lebar tray (700, 600, 500, lalu lebar lain yang terukur) + conduit (total horizontal, vertikal batas atas). Kolom conduit 16/22/28 = "belum diukur" (garis hijau tidak membedakan diameter). Kolom Hitung (Y/N) di sheet Detail Set mengatur revisi yang dihitung.
 
 ## 3. Aturan baca hasil
 - **PDF**: tray hanya dari sheet plan; conduit horizontal dari plan, vertikal dari section (batas atas). Skala dicek terhadap geometri grid; label bertentangan dengan >=6 garis grid = pakai geometri + peringatan (RFS-020026.06: sheet 3 dan 4 berlabel 1:120, geometri 1:200). Override `--scale SHEET=N`.
-- **DXF/DWG**: panjang dari LINE/POLYLINE/ARC/SPLINE + isi blok (rekursif). Garis berkoordinat sama dibuang (duplikat CAD). Lebar tray dari angka di nama layer (mis. `E-TRAY-700`) atau `layer_widths`; tanpa lebar = kelas `tanpa-lebar` + peringatan. Gambar ladder (banyak segmen pendek) = rel/2, wajib dikonfirmasi. `INSUNITS=0` = asumsi `assume_units` + peringatan.
+- **DXF/DWG**: panjang dari LINE/POLYLINE/ARC/SPLINE + isi blok (rekursif). Garis berkoordinat sama dibuang per jenis material (duplikat CAD). Geometri gagal dibaca, tipe entitas belum didukung, XREF/paper space, dan layer magenta/hijau belum dipetakan ditandai untuk pemeriksaan; jangan anggap hasil lengkap sebelum dicek. Lebar tray dari angka di nama layer (mis. `E-TRAY-700`) atau `layer_widths`; tanpa lebar = kelas `tanpa-lebar` + peringatan. Gambar ladder (banyak segmen pendek) = rel/2, wajib dikonfirmasi. `INSUNITS=0` = asumsi `assume_units` + peringatan.
 - **Support**: PDF = qty dari sheet detail (`SUH-xx QTY n EA`); DXF = jumlah INSERT blok `SUH-..`. Huruf kode ke lebar: `support_letter_width_mm`. Cross-check panjang tray / qty support harus 1.0-3.0 m; di luar = peringatan (rute hilang atau qty salah).
 - Status gambar bukan IFC/Approved atau ada komentar reviewer (mis. detail clamp/aksesori belum ada) = sebutkan; angka bisa berubah di revisi.
 

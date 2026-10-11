@@ -18,7 +18,17 @@ class Batch(unittest.TestCase):
         self.assertEqual(len(res["sets"]), 1); self.assertAlmostEqual(res["sets"][0]["tray_m"].get("700", 0), 10.0, delta=1.0)
         n1 = len(open(os.path.join(d, "o", "pages.jsonl")).readlines()); batch.run(f, cfg, os.path.join(d, "o"), budget=120, px=4)
         self.assertEqual(n1, len(open(os.path.join(d, "o", "pages.jsonl")).readlines()))     # resume: tidak mengulang halaman
-        batch.write_excel(os.path.join(d, "o")); self.assertTrue(os.path.exists(os.path.join(d, "o", "Rekap_Tray_Conduit_per_Area.xlsx")))
+        batch.write_excel(os.path.join(d, "o"), res["manifest"]); self.assertTrue(os.path.exists(os.path.join(d, "o", "Rekap_Tray_Conduit_per_Area.xlsx")))
+    def test_resume_menolak_file_atau_opsi_berbeda(self):
+        d = tempfile.mkdtemp(); f = os.path.join(d, "t.pdf"); other = os.path.join(d, "other.pdf")
+        make_pdf(f, title="PLAN AT EL+1000", scale=100, tray_mm=10000, tray_w=700)
+        make_pdf(other, title="PLAN AT EL+1000", scale=100, tray_mm=12000, tray_w=700)
+        out = os.path.join(d, "o"); cfg = T.load_config()
+        batch.run(f, cfg, out, budget=120, px=4)
+        with self.assertRaises(batch.BatchStateError):
+            batch.run(other, cfg, out, budget=120, px=4)
+        with self.assertRaises(batch.BatchStateError):
+            batch.run(f, cfg, out, budget=120, px=5)
     def test_role_section_berdiri_sendiri(self):
         self.assertEqual(T.guess_role("SECTION-A\nSCALE - 1:150"), "section"); self.assertEqual(T.guess_role("PLAN AT EL+5800\nSCALE - 1:150"), "plan")
 
