@@ -1,7 +1,7 @@
 # Assistant01
 
-<img width="1186" height="1766" alt="image" src="https://github.com/user-attachments/assets/1c5d57e5-9965-4026-8c49-25948f429633" />
-
+<img width="1226" height="1018" alt="image" src="https://github.com/user-attachments/assets/e4e1846b-3f9a-4c8e-b0b3-b16d72207927" />
+<img width="1226" height="1238" alt="image" src="https://github.com/user-attachments/assets/fb10429a-f162-4db3-bdeb-07b09b701744" />
 
 Workflow Daily MP v10 ada **5 tahap utama** dari input Drive sampai Excel (dengan approval gate di tengah):
 
