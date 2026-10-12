@@ -15,6 +15,9 @@ PT_MM = 25.4 / 72.0                      # mm kertas per titik PDF
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEC_RE = re.compile(r"SECTION\s*\n?\s*SCALE")
 LEGEND_RE = re.compile(r"\b([A-K])\s*=\s*(\d{2,4})\s*W\s*x\s*(\d{2,4})\s*H", re.I)
+TRAY_CALLOUT_RE = re.compile(
+    r"(?:CABLE\s+)?(?:TRAY|LADDER)\b.{0,80}?(\d{2,4})\s*(?:\(\s*W\s*\)|W)\s*[x×]\s*"
+    r"(\d{2,4})\s*(?:\(\s*H\s*\)|H)\s*MM\b", re.I | re.S)
 SUPPORT_RE = re.compile(r"(SU[HV]-\d+([A-K])[A-Z])\s*\n?\s*QTY\s*\n?\s*(\d+)\s*EA", re.I)
 
 
@@ -113,8 +116,27 @@ def legend_widths(text):
     return {k.upper(): (int(w), int(h)) for k, w, h in LEGEND_RE.findall(text)}
 
 
+def tray_callout_widths(text):
+    return sorted({int(w) for w, _ in TRAY_CALLOUT_RE.findall(text)})
+
+
 def parse_supports(text):
     return {m.group(1).upper(): {"qty": int(m.group(3)), "letter": m.group(2).upper()} for m in SUPPORT_RE.finditer(text)}
+
+
+def tray_width_candidates(row, cfg):
+    """Callout tray jadi sumber utama; berikutnya lebar support/legenda, lalu konfigurasi."""
+    callouts = row.get("tray_callout_widths", [])
+    if callouts: return sorted(set(map(int, callouts)))
+    legend = row.get("legend", {})
+    support_widths = {
+        int(legend[s["letter"]][0])
+        for s in row.get("supports", {}).values()
+        if s["letter"] in legend
+    }
+    if support_widths: return sorted(support_widths)
+    widths = {int(w) for w, _ in legend.values()}
+    return sorted(widths or set(map(int, cfg["tray_widths_mm"])))
 
 
 # ------------------------------------------------------------ raster + skeleton
@@ -186,7 +208,8 @@ def inspect(pdf, cfg):
         rows.append({"sheet": i, "role": cfg["roles"].get(str(i), guess_role(text)), "items": dict(cnt),
                      "label_scales": dict(label_scales(text)), "geometry_scale": snap_scale(g[0]) if g else None,
                      "geometry_lines": (g[1] + 1) if g else 0,
-                     "supports": parse_supports(text), "legend": legend_widths(text)})
+                     "supports": parse_supports(text), "legend": legend_widths(text),
+                     "tray_callout_widths": tray_callout_widths(text)})
     return {"file": os.path.basename(pdf), "pages": len(doc), "vector_ok": any(r["items"] for r in rows), "sheets": rows}
 
 
@@ -222,20 +245,30 @@ def plan(pdf, cfg, out, only=None):
     inv = inspect(pdf, cfg)
     if not inv["vector_ok"]:
         raise SystemExit("PDF tidak memuat garis vektor berwarna tray/conduit (mungkin scan/raster). Takeoff otomatis tidak andal; minta PDF vektor dari CAD.")
-    doc = fitz.open(pdf); px = cfg["px_per_pt"]; wmm = cfg["tray_widths_mm"]
+    doc = fitz.open(pdf); px = cfg["px_per_pt"]
     os.makedirs(os.path.join(out, "overlay"), exist_ok=True); sheets = []
     for row in inv["sheets"]:
         if (only and row["sheet"] not in only) or not row["items"]: continue
         role = row["role"]; N, st, fl = resolve_scale(row, cfg)
-        rec = {"sheet": row["sheet"], "role": role, "scale": N, "scale_status": st, "tray_m": {}, "conduit_h_m": 0.0, "conduit_v_m": 0.0, "flags": [fl] if fl else []}
+        rec = {"sheet": row["sheet"], "role": role, "scale": N, "scale_status": st, "tray_m": {},
+               "tray_length_m": 0.0, "tray_vertical_length_m": 0.0, "tray_vertical_m": {},
+               "conduit_h_m": 0.0, "conduit_v_m": 0.0, "flags": [fl] if fl else []}
         sheets.append(rec)
         if N is None: rec["flags"].append("dilewati: skala tidak diketahui"); continue
         k = N * PT_MM; p = doc[row["sheet"] - 1]; xmax = p.rect.width * cfg["content_xmax_frac"]; tag = f"sheet{row['sheet']:02d}"
         if row["items"].get("tray"):
             if role in cfg["tray_from"]:
-                m = make_mask(p, cfg["colors"]["tray"], cfg["color_tol"], px, xmax)
-                _, per, sk = measure(m, cfg["close_mm"]["tray"] / k, px, [w / k for w in wmm])
-                rec["tray_m"] = {str(wmm[i]): round(float(v) * k / 1000, 1) for i, v in per.items()}
+                is_vertical = role in cfg.get("tray_vertical_from", [])
+                widths = tray_width_candidates(row, cfg)
+                m = make_mask(p, cfg["colors"]["tray"], cfg["color_tol"], px, xmax,
+                              "v" if is_vertical else "all")
+                tray_pt, per, sk = measure(m, cfg["close_mm"]["tray"] / k, px, [w / k for w in widths])
+                rec["tray_m"] = {str(widths[i]): round(float(v) * k / 1000, 1) for i, v in per.items()}
+                rec["tray_length_m"] = round(float(tray_pt) * k / 1000, 3)
+                if is_vertical:
+                    rec["tray_vertical_m"] = dict(rec["tray_m"])
+                    rec["tray_vertical_length_m"] = rec["tray_length_m"]
+                    rec["flags"].append("tray vertikal dari section = batas atas, belum didedup antar-section")
                 write_overlay(m, sk, os.path.join(out, "overlay", f"{tag}_tray.png"))
             else: rec["flags"].append(f"tray ada di sheet peran '{role}' tidak dihitung (hanya dari {cfg['tray_from']})")
         if row["items"].get("conduit"):
@@ -249,15 +282,27 @@ def plan(pdf, cfg, out, only=None):
                 tot, _, _ = measure(m, cfg["close_mm"]["conduit"] / k, px)
                 rec["conduit_v_m"] = round(tot * k / 1000, 1)
                 rec["flags"].append("vertikal dari section = batas atas, belum dedup antar-section")
-    tray = collections.defaultdict(float); sup = {}; legend = {}
+    tray = collections.defaultdict(float); tray_plan = collections.defaultdict(float)
+    tray_vertical = collections.defaultdict(float); tray_length = tray_plan_length = tray_vertical_length = 0.0
+    sup = {}; legend = {}
     for r in sheets:
-        for w, v in r["tray_m"].items(): tray[w] += v
+        tray_length += r["tray_length_m"]
+        tray_vertical_length += r["tray_vertical_length_m"]
+        tray_plan_length += r["tray_length_m"] - r["tray_vertical_length_m"]
+        for w, v in r["tray_m"].items():
+            tray[w] += v
+            if w in r["tray_vertical_m"]: tray_vertical[w] += v
+            else: tray_plan[w] += v
     for row in inv["sheets"]: sup.update(row["supports"]); legend.update(row["legend"])
-    res = {"file": inv["file"], "manifest": source_manifest(pdf, cfg, mode="pdf"),
+    res = {"file": inv["file"], "manifest": source_manifest(pdf, cfg, mode="pdf", tray_width_model="callout-candidate-raster-v1"),
            "sheets": sheets, "tray_total_m": {w: round(float(v), 1) for w, v in tray.items()},
+           "tray_length_total_m": round(tray_length, 1), "tray_plan_length_m": round(tray_plan_length, 1),
+           "tray_vertical_upper_length_m": round(tray_vertical_length, 1),
+           "tray_plan_m": {w: round(float(v), 1) for w, v in tray_plan.items()},
+           "tray_vertical_upper_m": {w: round(float(v), 1) for w, v in tray_vertical.items()},
            "conduit_h_total_m": round(sum(r["conduit_h_m"] for r in sheets), 1),
            "conduit_v_upper_m": round(sum(r["conduit_v_m"] for r in sheets), 1),
-           "supports": sup, "checks": crosscheck(dict(tray), sup, legend, cfg)}
+           "supports": sup, "checks": crosscheck(dict(tray_plan), sup, legend, cfg)}
     for name, obj in (("plan.json", res), ("inventory.json", inv)):
         with open(os.path.join(out, name), "w", encoding="utf-8") as fh: json.dump(obj, fh, ensure_ascii=False, indent=1)
     return res
@@ -266,11 +311,16 @@ def plan(pdf, cfg, out, only=None):
 # ------------------------------------------------------------ output
 def print_plan(res):
     print("## DRY-RUN takeoff (belum ada Excel)\n")
-    print("| Sheet | Peran | Skala (status) | Tray m per lebar mm | Conduit horizontal m | Conduit vertikal m (batas atas) |\n|---|---|---|---|---|---|")
+    print("| Sheet | Peran | Skala (status) | Tray m per lebar (section vertikal = batas atas) | Conduit horizontal m | Conduit vertikal m (batas atas) |\n|---|---|---|---|---|---|")
     for r in res["sheets"]:
         tr = ", ".join(f"{k}W={v}" for k, v in r["tray_m"].items()) or "-"
         print(f"| {r['sheet']} | {r['role']} | 1:{r['scale']} ({r['scale_status']}) | {tr} | {r['conduit_h_m'] or '-'} | {r['conduit_v_m'] or '-'} |")
-    print(f"\nTray total (m): {res['tray_total_m']} | Conduit horizontal: {res['conduit_h_total_m']} m | Conduit vertikal (batas atas): {res['conduit_v_upper_m']} m")
+    plan_m = res.get("tray_plan_m", res["tray_total_m"])
+    vertical_m = res.get("tray_vertical_upper_m", {})
+    print(f"\nTray total per lebar (m, termasuk section vertikal batas atas): {res['tray_total_m']} | "
+          f"panjang total {res.get('tray_length_total_m', sum(res['tray_total_m'].values()))} m | "
+          f"plan {res.get('tray_plan_length_m', sum(plan_m.values())):.1f} m | "
+          f"section vertikal batas atas {res.get('tray_vertical_upper_length_m', sum(vertical_m.values())):.1f} m")
     print("\nCross-check support:"); [print(" - " + c) for c in res["checks"]]
     fl = [(r["sheet"], f) for r in res["sheets"] for f in r["flags"]]
     if fl: print("\nPeringatan:"); [print(f" - sheet {s}: {f}") for s, f in fl]
@@ -295,6 +345,7 @@ def execute(out, expected_manifest):
     wc = wb.create_sheet("Catatan")
     wc.append(["Catatan takeoff: ukur vektor PDF, akurasi sekitar +/-5%, belum termasuk waste."]); wc["A1"].font = Font(name="Arial", bold=True)
     for c in res["checks"]: wc.append([c])
+    wc.append(["Tray vertikal dari section = batas atas dan belum didedup antar-section."])
     wc.append(["Conduit vertikal = batas atas: section menampilkan conduit yang sama (belum dedup)."])
     wc.append(["Support (qty di sheet detail): " + ", ".join(f"{k}={v['qty']}" for k, v in res["supports"].items())])
     wc.column_dimensions["A"].width = 140
@@ -310,7 +361,10 @@ def plan_cad(path, cfg, out):
         except cad.ConvertError as e: raise SystemExit(f"GAGAL membaca DWG: {e}")
     rec, sup, legend = cad.measure(dxf, cfg)
     res = {"file": os.path.basename(path), "manifest": source_manifest(path, cfg, mode="cad"),
-           "sheets": [rec], "tray_total_m": dict(rec["tray_m"]), "conduit_h_total_m": rec["conduit_h_m"],
+           "sheets": [rec], "tray_total_m": dict(rec["tray_m"]),
+           "tray_length_total_m": round(sum(rec["tray_m"].values()), 1), "tray_plan_length_m": round(sum(rec["tray_m"].values()), 1),
+           "tray_vertical_upper_length_m": 0.0, "tray_plan_m": dict(rec["tray_m"]),
+           "tray_vertical_upper_m": {}, "conduit_h_total_m": rec["conduit_h_m"],
            "conduit_v_upper_m": 0.0 if not rec["conduit_v_m"] else rec["conduit_v_m"], "supports": sup, "source": "cad",
            "checks": crosscheck(dict(rec["tray_m"]), sup, legend, cfg)}
     with open(os.path.join(out, "plan.json"), "w", encoding="utf-8") as fh: json.dump(res, fh, ensure_ascii=False, indent=1)
@@ -351,7 +405,8 @@ def main():
             import batch
             if a.cmd == "plan": batch.run(a.pdf, cfg, a.out, a.budget, a.px); return
             if not a.confirm: sys.exit("Ditolak: execute hanya setelah user menyetujui hasil dry-run (tambahkan --confirm).")
-            expected = source_manifest(a.pdf, cfg, mode="pdf-batch", px=a.px, page_count=npages)
+            expected = source_manifest(a.pdf, cfg, mode="pdf-batch", px=a.px, page_count=npages,
+                                       tray_width_model="callout-candidate-raster-v1")
             try: batch.write_excel(a.out, expected)
             except PlanMismatchError as e: raise SystemExit(str(e))
             return
@@ -365,7 +420,7 @@ def main():
     else:
         if not a.confirm: sys.exit("Ditolak: execute hanya setelah user menyetujui hasil dry-run (tambahkan --confirm).")
         if not os.path.exists(os.path.join(a.out, "plan.json")): sys.exit("plan.json tidak ada: jalankan plan dulu.")
-        try: execute(a.out, source_manifest(a.pdf, cfg, mode="pdf"))
+        try: execute(a.out, source_manifest(a.pdf, cfg, mode="pdf", tray_width_model="callout-candidate-raster-v1"))
         except PlanMismatchError as e: raise SystemExit(str(e))
 
 if __name__ == "__main__": main()

@@ -1,5 +1,5 @@
 """Tes mode batch (PDF sintetis). Jalankan: python3 -m unittest discover -s tests"""
-import os, sys, tempfile, unittest
+import json, os, sys, tempfile, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 sys.path.insert(0, os.path.dirname(__file__))
 import batch, takeoff as T
@@ -31,5 +31,21 @@ class Batch(unittest.TestCase):
             batch.run(f, cfg, out, budget=120, px=5)
     def test_role_section_berdiri_sendiri(self):
         self.assertEqual(T.guess_role("SECTION-A\nSCALE - 1:150"), "section"); self.assertEqual(T.guess_role("PLAN AT EL+5800\nSCALE - 1:150"), "plan")
+    def test_tray_vertikal_section_masuk_batas_atas(self):
+        d = tempfile.mkdtemp(); f = os.path.join(d, "section.pdf")
+        make_pdf(f, title="SECTION", scale=100, tray_v_mm=10000, tray_w_text="1000")
+        res = batch.run(f, T.load_config(), os.path.join(d, "out"), budget=120, px=4)
+        self.assertAlmostEqual(res["sets"][0]["tray_m"].get("1000", 0), 10.0, delta=0.7)
+        self.assertAlmostEqual(res["sets"][0]["tray_vertical_upper_m"].get("1000", 0), 10.0, delta=0.7)
+    def test_resume_menolak_checkpoint_model_pengukuran_lama(self):
+        d = tempfile.mkdtemp(); f = os.path.join(d, "section.pdf"); out = os.path.join(d, "out")
+        make_pdf(f, title="SECTION", scale=100, tray_v_mm=10000, tray_w_text="1000")
+        batch.run(f, T.load_config(), out, budget=120, px=4)
+        run_path = os.path.join(out, "run.json")
+        with open(run_path, encoding="utf-8") as fh: manifest = json.load(fh)
+        manifest["options"].pop("tray_width_model")
+        with open(run_path, "w", encoding="utf-8") as fh: json.dump(manifest, fh)
+        with self.assertRaises(batch.BatchStateError):
+            batch.run(f, T.load_config(), out, budget=120, px=4)
 
 if __name__ == "__main__": unittest.main()

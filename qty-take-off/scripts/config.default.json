@@ -20,7 +20,8 @@
  "support_letter_width_mm": {"A":100,"B":200,"C":300,"D":400,"E":500,"F":600,"G":700,"H":800,"I":900,"J":1000,"K":400},
  "roles": {},
  "scales": {},
- "tray_from": ["plan"],
+ "tray_from": ["plan", "section"],
+ "tray_vertical_from": ["section"],
  "conduit_horizontal_from": ["plan"],
  "conduit_vertical_from": ["section"]
 }

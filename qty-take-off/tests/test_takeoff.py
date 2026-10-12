@@ -13,15 +13,17 @@ def line(p, a, b, color):
     sh = p.new_shape(); sh.draw_line(a, b); sh.finish(color=color, width=0.3); sh.commit()
 
 
-def make_pdf(path, title, scale, tray_mm=0, tray_w=700, cond_h_mm=0, cond_v_mm=0):
+def make_pdf(path, title, scale, tray_mm=0, tray_w=700, tray_v_mm=0, tray_w_text=None, cond_h_mm=0, cond_v_mm=0):
     doc = fitz.open(); p = doc.new_page(width=1191, height=842)
     p.insert_text((100, 800), f"{title}\nSCALE - 1:{scale}", fontsize=8)
+    if tray_w_text: p.insert_text((100, 780), f"CABLE TRAY {tray_w_text}(W) x 100(H)mm EL+1000", fontsize=8)
     x0, y0 = 100, 300
     if tray_mm:
         L, w = pt(tray_mm, scale), pt(tray_w, scale)
         for dy in (0, w): line(p, (x0, y0 + dy), (x0 + L, y0 + dy), (1, 0, 1))
         step = pt(300, scale); x = x0
         while x <= x0 + L: line(p, (x, y0), (x, y0 + w), (1, 0, 1)); x += step
+    if tray_v_mm: line(p, (700, 200), (700, 200 + pt(tray_v_mm, scale)), (1, 0, 1))
     if cond_h_mm: line(p, (100, 500), (100 + pt(cond_h_mm, scale), 500), (0, 1, 0))
     if cond_v_mm: line(p, (600, 100), (600, 100 + pt(cond_v_mm, scale)), (0, 1, 0))
     doc.save(path)
@@ -37,6 +39,7 @@ class Teks(unittest.TestCase):
     def test_label_dan_legend_dan_support(self):
         self.assertEqual(T.label_scales("SCALE - 1:120 ... 1: 200 ... 1:1").most_common(1)[0][0] in (120, 200), True)
         self.assertEqual(T.legend_widths("A =100Wx100H\nG =700Wx100H")["G"], (700, 100))
+        self.assertEqual(T.tray_callout_widths("CABLE TRAY 1000(W) x 100(H)mm EL+7800\nCABLE TRAY 200(W) x 100(H)mm"), [200, 1000])
         s = T.parse_supports("SUPPORT NO.\nSUH-42GC\nQTY\n6 EA\nSUPPORT NO.\nSUH-108BC\nQTY\n44 EA")
         self.assertEqual((s["SUH-42GC"]["qty"], s["SUH-42GC"]["letter"], s["SUH-108BC"]["qty"]), (6, "G", 44))
 
@@ -77,9 +80,16 @@ class Ukur(unittest.TestCase):
         self.assertEqual(r["conduit_v_upper_m"], 0)                            # plan tidak menyumbang vertikal
         r = self.run_plan(title="SECTION", scale=100, cond_h_mm=5000, cond_v_mm=3000)
         self.assertAlmostEqual(r["conduit_v_upper_m"], 3.0, delta=0.3); self.assertEqual(r["conduit_h_total_m"], 0)
-    def test_tray_di_section_tidak_dihitung(self):
-        r = self.run_plan(title="SECTION", scale=100, tray_mm=10000, tray_w=700)
-        self.assertEqual(r["tray_total_m"], {}); self.assertTrue(any("tidak dihitung" in f for s in r["sheets"] for f in s["flags"]))
+    def test_tray_vertikal_section_dihitung_sebagai_batas_atas(self):
+        r = self.run_plan(title="SECTION", scale=100, tray_v_mm=10000, tray_w_text="1000")
+        self.assertAlmostEqual(r["tray_total_m"].get("1000", 0), 10.0, delta=0.6)
+        self.assertAlmostEqual(r["tray_length_total_m"], 10.0, delta=0.6)
+        self.assertAlmostEqual(r["tray_vertical_upper_m"].get("1000", 0), 10.0, delta=0.6)
+        self.assertTrue(any("batas atas" in f for s in r["sheets"] for f in s["flags"]))
+    def test_callout_width_menggantikan_kandidat_default(self):
+        r = self.run_plan(title="PLAN AT EL+1000", scale=100, tray_mm=10000, tray_w=700, tray_w_text="1000")
+        self.assertGreater(r["tray_total_m"].get("1000", 0), 9.0)
+        self.assertNotIn("700", r["tray_total_m"])
     def test_pdf_tanpa_vektor_berwarna_ditolak(self):
         d = tempfile.mkdtemp(); f = os.path.join(d, "t.pdf"); make_pdf(f, title="PLAN AT EL+1000", scale=100)
         with self.assertRaises(SystemExit): T.plan(f, T.load_config(), os.path.join(d, "o"))

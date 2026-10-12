@@ -11,7 +11,7 @@ Bahasa: Indonesia, singkat. Keraguan disebut di AWAL jawaban.
 1. Selalu jalankan skrip; jangan menghitung dari gambar secara visual atau dari ingatan. Angka di jawaban = keluaran skrip.
 2. Urutan sumber (paling akurat dulu): **DXF/DWG** (panjang eksak dari entitas) > **PDF vektor** (ukur garis berwarna, +/-5%) > scan/raster (ditolak).
 3. Dry-run dulu (tabel di chat). Excel HANYA setelah user setuju (`execute` menolak tanpa `--confirm`).
-4. Conduit vertikal dari section PDF = BATAS ATAS (section menampilkan conduit yang sama). Dari DXF 3D = eksak; DXF 2D = tidak ada vertikal di geometri (dilaporkan).
+4. Conduit dan tray vertikal dari section PDF = BATAS ATAS (section dapat menampilkan jalur yang sama berulang). Dari DXF 3D = eksak; DXF 2D = tidak ada vertikal di geometri (dilaporkan).
 5. Tidak ada angka dikarang: skala/satuan tidak diketahui = dilaporkan dan dilewati.
 
 ## 2. Workflow
@@ -46,14 +46,14 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 - `execute --confirm` menulis `Rekap_Tray_Conduit_per_Area.xlsx`: baris = area, kolom = lebar tray (700, 600, 500, lalu lebar lain yang terukur) + conduit (total horizontal, vertikal batas atas). Kolom conduit 16/22/28 = "belum diukur" (garis hijau tidak membedakan diameter). Kolom Hitung (Y/N) di sheet Detail Set mengatur revisi yang dihitung.
 
 ## 3. Aturan baca hasil
-- **PDF**: tray hanya dari sheet plan; conduit horizontal dari plan, vertikal dari section (batas atas). Skala dicek terhadap geometri grid; label bertentangan dengan >=6 garis grid = pakai geometri + peringatan (RFS-020026.06: sheet 3 dan 4 berlabel 1:120, geometri 1:200). Override `--scale SHEET=N`.
+- **PDF**: tray total dari plan ditambah tray vertikal dari section (batas atas, belum didedup); conduit horizontal dari plan, vertikal dari section (batas atas). Lebar dipilih dari callout tray dan legenda/support bila tersedia; pembagian panjang per lebar tetap estimasi geometri raster dan total panjang keseluruhan lebih dapat dipercaya. Skala dicek terhadap geometri grid; label bertentangan dengan >=6 garis grid = pakai geometri + peringatan (RFS-020026.06: sheet 3 dan 4 berlabel 1:120, geometri 1:200). Override `--scale SHEET=N`.
 - **DXF/DWG**: panjang dari LINE/POLYLINE/ARC/SPLINE + isi blok (rekursif). Garis berkoordinat sama dibuang per jenis material (duplikat CAD). Geometri gagal dibaca, tipe entitas belum didukung, XREF/paper space, dan layer magenta/hijau belum dipetakan ditandai untuk pemeriksaan; jangan anggap hasil lengkap sebelum dicek. Lebar tray dari angka di nama layer (mis. `E-TRAY-700`) atau `layer_widths`; tanpa lebar = kelas `tanpa-lebar` + peringatan. Gambar ladder (banyak segmen pendek) = rel/2, wajib dikonfirmasi. `INSUNITS=0` = asumsi `assume_units` + peringatan.
 - **Support**: PDF = qty dari sheet detail (`SUH-xx QTY n EA`); DXF = jumlah INSERT blok `SUH-..`. Huruf kode ke lebar: `support_letter_width_mm`. Cross-check panjang tray / qty support harus 1.0-3.0 m; di luar = peringatan (rute hilang atau qty salah).
 - Status gambar bukan IFC/Approved atau ada komentar reviewer (mis. detail clamp/aksesori belum ada) = sebutkan; angka bisa berubah di revisi.
 
 ## 4. Batas yang harus disebut ke user
 - Aksesori (clamp, elbow, flexible, splice, cover), fitting tray, dan conduit per diameter belum dihitung.
-- Conduit vertikal dari PDF belum didedup; solusi bersih = DXF 3D atau hitung per cable tag/equipment (`references/saran-optimasi.md`).
+- Tray/conduit vertikal dari PDF belum didedup; tray dari section dilaporkan sebagai batas atas. Solusi bersih = DXF 3D atau hitung per cable tag/equipment (`references/saran-optimasi.md`).
 - Sheet/tank kembar bisa tidak lengkap (RFS-020026.06: North 2 EL+1000 dan EL+5600 tanpa conduit); bandingkan dan laporkan.
 
 ## 5. Tes dan pemeliharaan

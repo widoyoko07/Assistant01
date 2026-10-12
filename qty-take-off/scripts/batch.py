@@ -6,7 +6,6 @@ import collections, json, os, re, sys, time
 import numpy as np
 import takeoff as T
 
-BIN = 50                                   # lebar tray dikelompokkan per 50 mm sebelum dipetakan ke lebar kandidat
 KEYWORDS = ("TANKS", "BUILDING", "ROOM", "HEADWORKS", "FACILITY", "CHAMBER", "FILTER", "STATION", "SLUDGE", "CHLORINE", "MBR", "A2O")
 SKIP_WORDS = re.compile(r"\b(PANELS?|AND|TRANSFORMERS?|CABLE|TRAY|CONDUIT|BUSDUCT|LAYOUT|FIELD|EQUIPMENTS?|INCLUDE|ROUTING|&)\b", re.I)
 
@@ -15,20 +14,22 @@ class BatchStateError(RuntimeError):
     pass
 
 
-def hist_measure(m, close_pt, px, mm_pt, thick_pt=0.6):
-    """Garis tengah + histogram lebar lokal -> {lebar_mm_bin: meter}. Lebar = (lebar_pt - tebal garis) * mm/pt."""
+def hist_measure(m, close_pt, px, mm_pt, widths_mm, thick_pt=0.6):
+    """Garis tengah + estimasi lebar raster yang dipetakan ke lebar callout/legenda."""
     import cv2
     from skimage.morphology import skeletonize
     from scipy import ndimage as ndi
-    if not m.any(): return {}, m > 0
+    if not m.any(): return {}, m > 0, 0.0
     k = max(1, round(close_pt * px))
     mc = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (k, k)))
     sk = skeletonize(mc > 0); ys, xs = np.nonzero(sk)
-    if not len(xs): return {}, sk
+    if not len(xs): return {}, sk, 0.0
     w_mm = np.clip((2 * ndi.distance_transform_edt(mc > 0)[ys, xs] / px - thick_pt) * mm_pt, 0, 1500)
-    cls = np.zeros(sk.shape, np.int16); cls[ys, xs] = np.round(w_mm / BIN).astype(np.int16) + 1
+    widths = np.asarray(widths_mm, dtype=float)
+    cls = np.zeros(sk.shape, np.int16); cls[ys, xs] = np.argmin(np.abs(w_mm[:, None] - widths[None, :]), axis=1) + 1
     per = T.edge_lengths(sk, px, cls)
-    return {str((c - 1) * BIN): round(float(v) * mm_pt / 1000, 3) for c, v in per.items() if c > 0}, sk
+    return ({str(int(widths[c - 1])): round(float(v) * mm_pt / 1000, 3) for c, v in per.items() if c > 0},
+            sk, round(sum(per.values()) * mm_pt / 1000, 4))
 
 
 def scan_page(p, i, cfg, drs):
@@ -42,20 +43,30 @@ def scan_page(p, i, cfg, drs):
     return {"sheet": i, "role": cfg["roles"].get(str(i), T.guess_role(text)), "items": dict(cnt),
             "label_scales": dict(T.label_scales(text)), "geometry_scale": T.snap_scale(gm[0]) if gm else None,
             "geometry_lines": (gm[1] + 1) if gm else 0, "supports": T.parse_supports(text), "legend": T.legend_widths(text),
+            "tray_callout_widths": T.tray_callout_widths(text),
             "is_index": "DRAWING INDEX" in text.upper(), "title": title[:120]}
 
 
 def measure_page(p, row, cfg, drs, px, out):
     role = row["role"]; N, st, fl = T.resolve_scale(row, cfg)
-    rec = {"sheet": row["sheet"], "role": role, "scale": N, "scale_status": st, "tray_hist_m": {}, "conduit_h_m": 0.0, "conduit_v_m": 0.0,
+    rec = {"sheet": row["sheet"], "role": role, "scale": N, "scale_status": st, "tray_hist_m": {},
+           "tray_widths_classified": True, "tray_length_m": 0.0, "tray_vertical_length_m": 0.0,
+           "tray_vertical_m": {}, "conduit_h_m": 0.0, "conduit_v_m": 0.0,
            "flags": [fl] if fl else []}
     if len(row["label_scales"]) > 1: rec["flags"].append(f"beberapa skala di satu sheet {sorted(row['label_scales'])}; dipakai: 1:{N}")
     if N is None: rec["flags"].append("dilewati: skala tidak diketahui"); return rec
     k = N * T.PT_MM; xmax = p.rect.width * cfg["content_xmax_frac"]
     if row["items"].get("tray") and role in cfg["tray_from"]:
-        m = T.make_mask(p, cfg["colors"]["tray"], cfg["color_tol"], px, xmax, drawings=drs)
-        h, sk = hist_measure(m, cfg["close_mm"]["tray"] / k, px, k)
+        vertical = role in cfg.get("tray_vertical_from", [])
+        m = T.make_mask(p, cfg["colors"]["tray"], cfg["color_tol"], px, xmax,
+                        "v" if vertical else "all", drawings=drs)
+        h, sk, length_m = hist_measure(m, cfg["close_mm"]["tray"] / k, px, k, T.tray_width_candidates(row, cfg))
         rec["tray_hist_m"] = h
+        rec["tray_length_m"] = length_m
+        if vertical:
+            rec["tray_vertical_m"] = dict(h)
+            rec["tray_vertical_length_m"] = length_m
+            rec["flags"].append("tray vertikal dari section = batas atas, belum didedup antar-section")
         T.write_overlay(m, sk, os.path.join(out, "overlay", f"sheet{row['sheet']:03d}_tray.png"))
     if row["items"].get("conduit"):
         if role in cfg["conduit_horizontal_from"]:
@@ -71,7 +82,8 @@ def run(pdf, cfg, out, budget=240, px=4):
     import pymupdf as fitz
     doc = fitz.open(pdf); n = len(doc); os.makedirs(os.path.join(out, "overlay"), exist_ok=True)
     path = os.path.join(out, "pages.jsonl"); run_path = os.path.join(out, "run.json")
-    manifest = T.source_manifest(pdf, cfg, mode="pdf-batch", px=px, page_count=n)
+    manifest = T.source_manifest(pdf, cfg, mode="pdf-batch", px=px, page_count=n,
+                                 tray_width_model="callout-candidate-raster-v1")
     if os.path.exists(run_path):
         try:
             with open(run_path, encoding="utf-8") as fh: previous = json.load(fh)
@@ -113,7 +125,10 @@ def set_name(rows):
 
 
 def aggregate(out, cfg, fname="", manifest=None):
-    recs = [json.loads(l) for l in open(os.path.join(out, "pages.jsonl"), encoding="utf-8")]; recs.sort(key=lambda r: r["row"]["sheet"])
+    latest = {}
+    for line in open(os.path.join(out, "pages.jsonl"), encoding="utf-8"):
+        item = json.loads(line); latest[item["row"]["sheet"]] = item
+    recs = sorted(latest.values(), key=lambda r: r["row"]["sheet"])
     n = len(recs); idx = [r["row"]["sheet"] for r in recs if r["row"]["is_index"]]
     starts = sorted({max(1, i - 1) for i in idx}) or [1]
     if starts[0] != 1: starts = [1] + starts
@@ -125,25 +140,48 @@ def aggregate(out, cfg, fname="", manifest=None):
         sup = {}; leg = dict(letters)
         for r in part: sup.update(r["row"]["supports"]); leg.update(r["row"]["legend"])
         sup_h = {k: v for k, v in sup.items() if k.startswith("SUH")}
-        cand = sorted({leg[v["letter"]][0] for v in sup_h.values() if v["letter"] in leg}) or list(cfg["tray_widths_mm"])
-        tray = collections.defaultdict(float)
+        tray = collections.defaultdict(float); tray_vertical = collections.defaultdict(float)
+        tray_plan = collections.defaultdict(float)
+        tray_length = tray_vertical_length = tray_plan_length = 0.0
         for r in part:
-            for wb, v in ((r["rec"] or {}).get("tray_hist_m") or {}).items():
-                tray[str(min(cand, key=lambda c: abs(c - int(wb))))] += v
+            rec = r["rec"] or {}; hist = rec.get("tray_hist_m") or {}
+            if rec.get("tray_widths_classified"):
+                hist_by_width = hist
+            else:
+                callouts = {w for page in part for w in page["row"].get("tray_callout_widths", [])}
+                support_widths = {leg[v["letter"]][0] for v in sup_h.values() if v["letter"] in leg}
+                candidates = sorted(callouts or support_widths or {w for w, _ in leg.values()} or set(cfg["tray_widths_mm"]))
+                hist_by_width = collections.defaultdict(float)
+                for bin_width, value in hist.items():
+                    width = str(min(candidates, key=lambda candidate: abs(candidate - int(bin_width))))
+                    hist_by_width[width] += value
+            for width, value in hist_by_width.items():
+                tray[width] += value
+                if width in rec.get("tray_vertical_m", {}): tray_vertical[width] += value
+                else: tray_plan[width] += value
+            tray_length += rec.get("tray_length_m", sum(hist.values()))
+            tray_vertical_length += rec.get("tray_vertical_length_m", 0)
+            tray_plan_length += rec.get("tray_length_m", sum(hist.values())) - rec.get("tray_vertical_length_m", 0)
         ch = sum((r["rec"] or {}).get("conduit_h_m", 0) for r in part); cv = sum((r["rec"] or {}).get("conduit_v_m", 0) for r in part)
         tray = {w: round(v, 1) for w, v in tray.items()}
         flags = []; lab_only = [r["row"]["sheet"] for r in part if r["rec"] and r["rec"]["scale_status"] == "label-saja"]
         for r in part:
             for f in (r["rec"] or {}).get("flags", []):
-                if "TIDAK cocok" in f or "WAJIB" in f or "beberapa skala" in f or "tidak diketahui" in f: flags.append(f"hal {r['row']['sheet']}: {f}")
+                if "TIDAK cocok" in f or "WAJIB" in f or "beberapa skala" in f or "tidak diketahui" in f or "tray vertikal" in f:
+                    flags.append(f"hal {r['row']['sheet']}: {f}")
         unmeasured = [r["row"]["sheet"] for r in part if r["row"]["items"] and r["row"]["role"] == "other"]
         if unmeasured: flags.append(f"{len(unmeasured)} halaman berwarna TIDAK terukur (jenis halaman tidak dikenali): hal {unmeasured[:12]}")
         if lab_only: flags.append(f"{len(lab_only)} halaman berskala dari label saja (belum terverifikasi geometri)")
-        if (ch or cv or tray) and not sup_h: flags.append("tidak ada qty support terbaca; cek silang spacing dilewati; lebar tray pakai config")
+        if (ch or cv or tray) and not sup_h: flags.append("tidak ada qty support terbaca; cek silang spacing dilewati; lebar tray dari callout/legenda atau config")
         name = set_name([r["row"] for r in part])
         sets.append({"set": si + 1, "pages": [a, b], "name": name, "tray_m": tray, "conduit_h_m": round(ch, 1), "conduit_v_upper_m": round(cv, 1),
+                     "tray_length_total_m": round(tray_length, 1),
+                     "tray_plan_length_m": round(tray_plan_length, 1),
+                     "tray_vertical_upper_length_m": round(tray_vertical_length, 1),
+                     "tray_plan_m": {w: round(v, 1) for w, v in tray_plan.items()},
+                     "tray_vertical_upper_m": {w: round(v, 1) for w, v in tray_vertical.items()},
                      "supports": {k: v["qty"] for k, v in sup_h.items()}, "support_total": sum(v["qty"] for v in sup_h.values()),
-                     "checks": T.crosscheck(tray, sup_h, leg, cfg) if tray and sup_h else [], "flags": flags, "key": re.sub(r"[^A-Z0-9]", "", SKIP_WORDS.sub("", name.upper())), "include": True})
+                     "checks": T.crosscheck(dict(tray_plan), sup_h, leg, cfg) if tray_plan and sup_h else [], "flags": flags, "key": re.sub(r"[^A-Z0-9]", "", SKIP_WORDS.sub("", name.upper())), "include": True})
     seen = collections.defaultdict(list)
     for s in sets: seen[s["key"]].append(s)
     for key, grp in seen.items():
@@ -157,15 +195,20 @@ def aggregate(out, cfg, fname="", manifest=None):
 
 def print_sets(res):
     print("\n## DRY-RUN takeoff batch (belum ada Excel)\n")
-    print("| Set | Halaman | Nama | Dihitung | Tray m (lebar mm) | Conduit horiz m | Conduit vert m (batas atas) | Support |\n|---|---|---|---|---|---|---|---|")
+    print("| Set | Halaman | Nama | Dihitung | Tray m per lebar (section v = batas atas) | Conduit horiz m | Conduit vert m (batas atas) | Support |\n|---|---|---|---|---|---|---|---|")
     tt = collections.defaultdict(float); ch = cv = 0
+    vertical_length = 0.0
     for s in res["sets"]:
         tr = ", ".join(f"{w}W={v}" for w, v in sorted(s["tray_m"].items(), key=lambda x: int(x[0]))) or "-"
         print(f"| {s['set']} | {s['pages'][0]}-{s['pages'][1]} | {s['name'][:48]} | {'ya' if s['include'] else 'TIDAK (duplikat)'} | {tr} | {s['conduit_h_m'] or '-'} | {s['conduit_v_upper_m'] or '-'} | {s['support_total'] or '-'} |")
         if s["include"]:
             for w, v in s["tray_m"].items(): tt[w] += v
+            vertical_length += s.get("tray_vertical_upper_length_m", sum(s.get("tray_vertical_upper_m", {}).values()))
             ch += s["conduit_h_m"]; cv += s["conduit_v_upper_m"]
-    print(f"\nTotal (set 'ya'): tray {dict(sorted(((w, round(v, 1)) for w, v in tt.items()), key=lambda x: int(x[0])))} | conduit horizontal {round(ch, 1)} m | conduit vertikal batas atas {round(cv, 1)} m")
+    total_length = sum(s.get("tray_length_total_m", sum(s["tray_m"].values())) for s in res["sets"] if s["include"])
+    print(f"\nTotal (set 'ya'): tray {dict(sorted(((w, round(v, 1)) for w, v in tt.items()), key=lambda x: int(x[0])))} "
+          f"| panjang total {round(total_length, 1)} m (section vertikal batas atas {round(vertical_length, 1)} m) "
+          f"| conduit horizontal {round(ch, 1)} m | conduit vertikal batas atas {round(cv, 1)} m")
     print("\nPeringatan:")
     for s in res["sets"]:
         for f in s["flags"][:6]: print(f" - set {s['set']} ({s['name'][:30]}): {f}")
@@ -258,7 +301,7 @@ def write_excel(out, expected_manifest):
     wr.column_dimensions[CL(3 + n_t + 4)].width = 20; wr.column_dimensions[CL(4 + n_t + 4)].width = 34; wr.column_dimensions[CL(5 + n_t + 4)].width = 90
     wr.freeze_panes = wr.cell(r0 + 2, 2)
     notes = ["Catatan:", "1. Hanya cable tray dan conduit. Ukur vektor PDF, akurasi sekitar +/-5%, belum termasuk waste.",
-             "2. Tray per lebar dari lebar garis (dipetakan ke lebar support di set); lebar selain 700/600/500 tetap ditampilkan karena terukur.",
+             "2. Lebar tray dipilih dari callout/legenda/support; pembagian panjang per lebar masih estimasi geometri raster. Tray vertikal dari section termasuk batas atas dan belum didedup.",
              "3. Conduit per ukuran (16/22/28) BELUM bisa: garis hijau tidak membedakan diameter. Yang tersedia: total horizontal (plan) dan vertikal (batas atas, belum dedup antar-section).",
              "4. Revisi/duplikat diatur di sheet 'Detail Set' kolom Hitung (Y/N); rekap terhitung ulang otomatis.",
              "5. Baris berwarna merah muda = hasil tidak andal (cek support gagal atau conduit kosong); jangan dipakai sebelum dicek manual."]
