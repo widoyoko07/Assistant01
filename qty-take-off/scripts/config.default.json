@@ -1,7 +1,7 @@
 {
  "_petunjuk": "Konfigurasi default proyek Z1 (A2O Bioreactor). Ubah lewat --config file lain; jangan ubah file ini tanpa diminta user.",
  "colors": {"tray": [1, 0, 1], "conduit": [0, 1, 0]},
- "color_tol": 0.05,
+ "color_tol": 0.16,
  "px_per_pt": 6,
  "close_mm": {"tray": 423, "conduit": 212},
  "tray_widths_mm": [200, 700],

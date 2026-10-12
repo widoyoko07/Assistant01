@@ -1,0 +1,8 @@
+pymupdf
+numpy
+opencv-python-headless>=4.8,<5
+scikit-image
+scipy
+openpyxl
+ezdxf
+pytesseract>=0.3.10,<1

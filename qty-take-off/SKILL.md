@@ -43,7 +43,12 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 - `python3 scripts/takeoff.py plan <pdf> --out /tmp/big --budget 200` lalu ulangi perintah yang sama sampai muncul tabel (checkpoint `pages.jsonl` dengan metadata `run.json`, aman bila terhenti). Perkiraan 2-4 detik per halaman berwarna; 599 halaman sekitar 25 menit. Jalankan di background (`setsid nohup`) bila perlu dan pantau jumlah baris `pages.jsonl`. File, konfigurasi, atau opsi berbeda ditolak; gunakan folder output baru untuk run baru.
 - Set gambar dikelompokkan dari halaman DRAWING INDEX. Judul sama yang muncul berkali-kali = DUPLIKAT revisi; default hanya set terakhir dihitung, WAJIB konfirmasi revisi ke user.
 - Setiap set diberi status keandalan (cek support OK / gagal / tanpa cek / conduit kosong / halaman tidak terukur). Set tidak andal jangan dilaporkan sebagai angka final.
-- `execute --confirm` menulis `Rekap_Tray_Conduit_per_Area.xlsx`: baris = area, kolom = lebar tray (700, 600, 500, lalu lebar lain yang terukur) + conduit (total horizontal, vertikal batas atas). Kolom conduit 16/22/28 = "belum diukur" (garis hijau tidak membedakan diameter). Kolom Hitung (Y/N) di sheet Detail Set mengatur revisi yang dihitung.
+- `execute --confirm` menulis `Rekap_Tray_Conduit_per_Area.xlsx`: baris = area, kolom = lebar tray (700, 600, 500, lalu lebar lain yang terukur) + conduit (total horizontal, vertikal batas atas). Kolom conduit 16/22/28 = "belum diukur" (garis hijau tidak membedakan diameter; rincian ukuran dan jenis dari label ada di `scripts/conduit.py`). Kolom Hitung (Y/N) di sheet Detail Set mengatur revisi yang dihitung.
+
+**Conduit per ukuran dan jenis (PDF batch)**: dijalankan SETELAH plan batch tray/conduit selesai (butuh `pages.jsonl` + `plan.json` di folder batch). Label conduit ("42mmØ / SIGNAL / EL-...") adalah garis vektor, bukan teks PDF, sehingga dibaca dengan OCR (perlu Tesseract + `pytesseract`).
+- `python3 scripts/conduit.py plan <pdf> --plan-dir /tmp/big --out /tmp/cond --budget 240` lalu ulangi perintah yang sama sampai tabel muncul (checkpoint `conduit_labels.jsonl`; sekitar 12-15 detik per halaman berconduit, jalankan di background bila perlu). Uji cepat: `--pages 28,490`.
+- Dry-run menampilkan total per ukuran x jenis (jumlah label / meter estimasi) dan ringkasan per set. Tanya "Jadikan Excel?" lalu `python3 scripts/conduit.py execute <pdf> --plan-dir /tmp/big --out /tmp/cond --confirm` -> `Rekap_Conduit_per_Area.xlsx` (baris = area, kolom = ukuran x Power/Signal/Control; blok jumlah label, meter horizontal, meter vertikal batas atas). Jalankan `recalc.py` skill xlsx (error 0), lalu `present_files`.
+- Metode HARUS disebut: jumlah label = hasil OCR (bisa terlewat; ukuran di luar daftar umum atau confidence <30 ditandai untuk cek visual); meter per kategori = ESTIMASI proporsional (panjang conduit hijau di halaman dibagi menurut jumlah label di halaman itu), bukan penelusuran leader per label. Label plan dan section bisa menghitung conduit yang sama dua kali; vertikal = batas atas. Panjang tanpa label terbaca dilaporkan terpisah ("Tanpa label").
 
 ## 3. Aturan baca hasil
 - **PDF**: tray total dari plan ditambah tray vertikal dari section (batas atas, belum didedup); conduit horizontal dari plan, vertikal dari section (batas atas). Lebar dipilih dari callout tray dan legenda/support bila tersedia; pembagian panjang per lebar tetap estimasi geometri raster dan total panjang keseluruhan lebih dapat dipercaya. Skala dicek terhadap geometri grid; label bertentangan dengan >=6 garis grid = pakai geometri + peringatan (RFS-020026.06: sheet 3 dan 4 berlabel 1:120, geometri 1:200). Override `--scale SHEET=N`.
@@ -52,6 +57,7 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 - Status gambar bukan IFC/Approved atau ada komentar reviewer (mis. detail clamp/aksesori belum ada) = sebutkan; angka bisa berubah di revisi.
 
 ## 4. Batas yang harus disebut ke user
+- Warna garis di gambar bervariasi sedikit (mis. hijau `(0,1,0)` dan `(0,1,0.1)`, magenta `(1,0,0.97)` dan `(1,0.14,1)`); `color_tol` default 0.16 untuk menangkap semuanya. Bila PDF baru terbaca kosong atau jauh lebih kecil, survei warna dulu sebelum menyimpulkan.
 - Aksesori (clamp, elbow, flexible, splice, cover), fitting tray, dan conduit per diameter belum dihitung.
 - Tray/conduit vertikal dari PDF belum didedup; tray dari section dilaporkan sebagai batas atas. Solusi bersih = DXF 3D atau hitung per cable tag/equipment (`references/saran-optimasi.md`).
 - Sheet/tank kembar bisa tidak lengkap (RFS-020026.06: North 2 EL+1000 dan EL+5600 tanpa conduit); bandingkan dan laporkan.
@@ -68,6 +74,7 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 | `scripts/takeoff.py` | inspect, plan, execute (PDF dan dispatch CAD) |
 | `scripts/batch.py` | mode batch PDF gabungan, set, duplikat, rekap per area |
 | `scripts/cad.py` | konversi DWG->DXF, scan, ukur entitas DXF |
+| `scripts/conduit.py` | conduit per ukuran x jenis: OCR label, alokasi proporsional, Excel rekap per area |
 | `scripts/config.default.json` | warna, lebar tray, parameter ukur, deret grid, layer |
 | `tests/` | tes sintetis PDF dan DXF + regresi PDF asli |
 | `references/saran-optimasi.md` | temuan uji, saran optimasi, checklist QA |
