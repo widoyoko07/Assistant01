@@ -23,7 +23,7 @@ Bahasa: Indonesia, singkat. Keraguan disebut di AWAL jawaban.
 | File | Perlakuan |
 |---|---|
 | `.dxf` | langsung `inspect`/`plan` |
-| `.dwg` | skrip mencoba konversi (`dwg2dxf` atau `ODAFileConverter`, bila ada). Gagal = skrip mengeluarkan instruksi; sampaikan ke user: ekspor **SAVEAS DXF (2013/2018)** atau **PLOT ke PDF vektor**, lalu unggah ulang. Jangan mencoba build converter dari source (15+ menit, hasil pada DWG besar tetap gagal). |
+| `.dwg` | skrip mencoba konversi (`dwg2dxf` atau `ODAFileConverter`, bila ada). Converter belum ada = coba `bash scripts/setup_converter.sh` SEKALI (apt `libredwg-utils`, tanpa jaminan untuk DWG besar/2018). Tetap gagal = sampaikan ke user: konversi di laptop dengan `scripts/convert_local.py` / `convert_local.bat` (ODA File Converter, jalur paling andal), atau ekspor **SAVEAS DXF (2013/2018)** / **PLOT ke PDF vektor**, lalu unggah ulang. Jangan mencoba build converter dari source (15+ menit, hasil pada DWG besar tetap gagal). |
 | `.pdf` | jalur PDF; wajib vektor (CAD plot), bukan scan |
 
 **2. Inspect**: `python3 scripts/takeoff.py inspect <file> --out /tmp/tk`
@@ -75,6 +75,8 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 | `scripts/batch.py` | mode batch PDF gabungan, set, duplikat, rekap per area |
 | `scripts/cad.py` | konversi DWG->DXF, scan, ukur entitas DXF |
 | `scripts/conduit.py` | conduit per ukuran x jenis: OCR label, alokasi proporsional, Excel rekap per area |
+| `scripts/setup_converter.sh` | coba pasang `dwg2dxf` (LibreDWG) di sandbox Linux |
+| `scripts/convert_local.py`, `convert_local.bat` | konversi DWG->DXF di laptop user via ODA File Converter (batch folder) |
 | `scripts/config.default.json` | warna, lebar tray, parameter ukur, deret grid, layer |
 | `tests/` | tes sintetis PDF dan DXF + regresi PDF asli |
 | `references/saran-optimasi.md` | temuan uji, saran optimasi, checklist QA |

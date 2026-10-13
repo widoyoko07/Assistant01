@@ -92,4 +92,32 @@ class CAD(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0); self.assertIn("tidak cocok", r.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.d, "Takeoff_Tray_Conduit.xlsx")))
 
+class Converter(unittest.TestCase):
+    def setUp(self): self.d = tempfile.mkdtemp()
+    def test_find_converter_env(self):
+        from unittest import mock
+        fake = os.path.join(self.d, "dwg2dxf"); open(fake, "w").close()
+        with mock.patch.dict(os.environ, {"DWG2DXF_BIN": fake}):
+            self.assertEqual(cad.find_converter(), ("dwg2dxf", fake))
+    def test_find_converter_kosong(self):
+        from unittest import mock
+        env = {k: v for k, v in os.environ.items() if k not in ("DWG2DXF_BIN", "ODA_BIN")}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(cad.shutil, "which", return_value=None):
+            self.assertEqual(cad.find_converter(), (None, None))
+    def test_pesan_error_menyebut_setup_dan_konversi_lokal(self):
+        from unittest import mock
+        bad = os.path.join(self.d, "x.dwg"); open(bad, "wb").write(b"AC1032" + os.urandom(2000))
+        with mock.patch.object(cad, "find_converter", return_value=(None, None)):
+            with self.assertRaises(cad.ConvertError) as cm: cad.convert_dwg(bad, os.path.join(self.d, "o"))
+        self.assertIn("setup_converter.sh", str(cm.exception)); self.assertIn("convert_local.py", str(cm.exception))
+    def test_convert_local_find_oda_env(self):
+        from unittest import mock
+        import convert_local as CL
+        fake = os.path.join(self.d, "ODAFileConverter"); open(fake, "w").close()
+        with mock.patch.dict(os.environ, {"ODA_BIN": fake}): self.assertEqual(CL.find_oda(), fake)
+    def test_convert_local_verify_menolak_file_kecil(self):
+        import convert_local as CL
+        small = os.path.join(self.d, "a.dxf"); open(small, "w").write("0")
+        self.assertFalse(CL.verify(small)[0]); self.assertFalse(CL.verify(os.path.join(self.d, "none.dxf"))[0])
+
 if __name__ == "__main__": unittest.main()
