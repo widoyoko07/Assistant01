@@ -36,8 +36,9 @@ def convert_dwg(path, out_dir, timeout=280):
     ver = dwg_version(path); size = os.path.getsize(path) / 1e6
     kind, bin_ = find_converter()
     hint = (f"DWG {ver}, {size:.0f} MB tidak dapat dikonversi otomatis di sini. Minta user mengekspor dari AutoCAD: "
-            "SAVEAS -> DXF (versi 2013/2018 ASCII), atau PDF vektor (PLOT, bukan scan), lalu unggah ulang.")
-    if not kind: raise ConvertError("Tidak ada converter DWG (dwg2dxf/ODAFileConverter). " + hint)
+            "SAVEAS -> DXF (versi 2013/2018 ASCII), atau PDF vektor (PLOT, bukan scan), lalu unggah ulang. "
+            "Alternatif: konversi di laptop dengan scripts/convert_local.py (ODA File Converter), lalu unggah DXF-nya.")
+    if not kind: raise ConvertError("Tidak ada converter DWG (dwg2dxf/ODAFileConverter); coba `bash scripts/setup_converter.sh` sekali. " + hint)
     out = os.path.join(out_dir, os.path.splitext(os.path.basename(path))[0] + ".dxf")
     try:
         if kind == "dwg2dxf":
