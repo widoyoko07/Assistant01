@@ -1,0 +1,69 @@
+diff --git a/qty-take-off/SKILL.md b/qty-take-off/SKILL.md
+index 2ff4e8e..e4ed3fe 100644
+--- a/qty-take-off/SKILL.md
++++ b/qty-take-off/SKILL.md
+@@ -43,6 +43,7 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya,
+ - Skala memakai label `SCALE - 1:N` per view dan dibandingkan dengan grid; konflik dilaporkan dan hasil tetap provisional.
+ - Tray diambil dari callout OCR `CABLE TRAY nnn(W)`, bukan legenda A-K. Plan dihitung horizontal; section vertikal sebagai batas atas dan belum didedup.
+ - Conduit dikelompokkan menurut ukuran, jenis, dan orientasi vektor. Penempatan label ke rute terdekat selalu provisional; periksa overlay conduit.
++- Ukuran conduit valid (G-Type): 16, 22, 28, 36, 42, 54, 70, 82, 92, 104 mm. Label >104 mm = kabel pada tray/ladder, bukan conduit (dikeluarkan dari hitungan, dicatat di `cables_in_tray`); ukuran <=104 yang tidak ada di daftar = dugaan salah baca OCR, dikeluarkan dan dilaporkan.
+ - Support dan elevasi diperiksa silang. OCR memerlukan Tesseract yang tersedia di PATH.
+ 
+ **Mode batch (PDF gabungan banyak set, mis. 599 halaman)**: otomatis aktif bila halaman > 40 (atau `--batch`).
+diff --git a/qty-take-off/scripts/conduit.py b/qty-take-off/scripts/conduit.py
+index 96a38a8..25dfa35 100644
+--- a/qty-take-off/scripts/conduit.py
++++ b/qty-take-off/scripts/conduit.py
+@@ -19,7 +19,7 @@ import numpy as np
+ 
+ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
+ TYPES = ("POWER", "SIGNAL", "CONTROL")
+-KNOWN_SIZES = (16, 22, 28, 36, 42, 54, 70, 82, 100, 104, 200)   # ukuran umum di gambar proyek; selain ini ditandai
++KNOWN_SIZES = (16, 22, 28, 36, 42, 54, 70, 82, 92, 104)   # ukuran umum di gambar proyek; selain ini ditandai
+ SIZE_RE = re.compile(r"^([0-9OoIl]{2,3})\s*mm", re.I)
+ DIGITS = str.maketrans("OoIl", "0011")
+ LOW_CONF = 30
+diff --git a/qty-take-off/scripts/sheetdetail.py b/qty-take-off/scripts/sheetdetail.py
+index 779cb6b..2578636 100644
+--- a/qty-take-off/scripts/sheetdetail.py
++++ b/qty-take-off/scripts/sheetdetail.py
+@@ -25,6 +25,7 @@ PX_TO_PT = 72.0 / DPI
+ STD = (50, 75, 100, 120, 150, 200, 250)
+ EL_RE = re.compile(r"^EL\+?(\d{3,5})mm", re.I)
+ SUP_RE = re.compile(r"^SU([HV])-?(\d+)([A-K])([CS])$", re.I)
++CONDUIT_SIZES = (16, 22, 28, 36, 42, 54, 70, 82, 92, 104)   # G-Type conduit pipe; maks desain 104 mm
+ LETTER_W = {"A": 100, "B": 200, "C": 300, "D": 400, "E": 500, "F": 600, "G": 700, "H": 800, "I": 900, "J": 1000, "K": 400}
+ FLOORS_NOTE = "level lantai section"
+ 
+@@ -176,7 +177,13 @@ def process_sheet(doc, row, cfg, out, px, ocr_words_):
+             if vertical: rec["flags"].append("tray vertikal dari section = BATAS ATAS (tray yang sama bisa tampak di sheet section lain)")
+             T.write_overlay(m, sk, os.path.join(out, "overlay", f"{tag}_tray.png"))
+     # --- conduit
+-    labs, unp = conduit_labels(ocr_words_); rec["unpaired"] = unp
++    labs_all, unp = conduit_labels(ocr_words_); rec["unpaired"] = unp
++    labs = [l for l in labs_all if l["size"] in CONDUIT_SIZES]
++    cab = [l for l in labs_all if l["size"] > max(CONDUIT_SIZES)]
++    bad = [l for l in labs_all if l["size"] <= max(CONDUIT_SIZES) and l["size"] not in CONDUIT_SIZES]
++    rec["cables_in_tray"] = [{"size": l["size"], "type": l["type"], "el": l["el"]} for l in cab]
++    if cab: rec["flags"].append(f"{len(cab)} label >{max(CONDUIT_SIZES)} mm ({sorted({l['size'] for l in cab})}) = kabel pada tray/ladder, BUKAN conduit; dikeluarkan dari hitungan conduit")
++    if bad: rec["flags"].append(f"{len(bad)} label ukuran di luar daftar conduit ({sorted({l['size'] for l in bad})}): kemungkinan salah baca OCR, dikeluarkan; cek visual")
+     for l in labs: l["x_pt"], l["y_pt"] = l["x"] * PX_TO_PT, l["y"] * PX_TO_PT
+     rec["labels"] = [{k2: l[k2] for k2 in ("size", "type", "el", "conf", "known", "low_conf", "x_pt", "y_pt")} for l in labs]
+     if row["items"].get("conduit"):
+diff --git a/qty-take-off/tests/test_sheetdetail.py b/qty-take-off/tests/test_sheetdetail.py
+index 6489a19..d861823 100644
+--- a/qty-take-off/tests/test_sheetdetail.py
++++ b/qty-take-off/tests/test_sheetdetail.py
+@@ -28,5 +28,12 @@ class SheetDetail(unittest.TestCase):
+         )
+         self.assertEqual(S.LETTER_W["D"], 400)
+ 
++    def test_ukuran_conduit_maks_104(self):
++        self.assertEqual(max(S.CONDUIT_SIZES), 104)
++        self.assertNotIn(150, S.CONDUIT_SIZES)
++        self.assertNotIn(200, S.CONDUIT_SIZES)
++        self.assertIn(92, S.CONDUIT_SIZES)
++
++
+ if __name__ == "__main__":
+     unittest.main()
