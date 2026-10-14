@@ -25,6 +25,7 @@ PX_TO_PT = 72.0 / DPI
 STD = (50, 75, 100, 120, 150, 200, 250)
 EL_RE = re.compile(r"^EL\+?(\d{3,5})mm", re.I)
 SUP_RE = re.compile(r"^SU([HV])-?(\d+)([A-K])([CS])$", re.I)
+CONDUIT_SIZES = (16, 22, 28, 36, 42, 54, 70, 82, 92, 104)   # G-Type conduit pipe; maks desain 104 mm
 LETTER_W = {"A": 100, "B": 200, "C": 300, "D": 400, "E": 500, "F": 600, "G": 700, "H": 800, "I": 900, "J": 1000, "K": 400}
 FLOORS_NOTE = "level lantai section"
 
@@ -176,7 +177,13 @@ def process_sheet(doc, row, cfg, out, px, ocr_words_):
             if vertical: rec["flags"].append("tray vertikal dari section = BATAS ATAS (tray yang sama bisa tampak di sheet section lain)")
             T.write_overlay(m, sk, os.path.join(out, "overlay", f"{tag}_tray.png"))
     # --- conduit
-    labs, unp = conduit_labels(ocr_words_); rec["unpaired"] = unp
+    labs_all, unp = conduit_labels(ocr_words_); rec["unpaired"] = unp
+    labs = [l for l in labs_all if l["size"] in CONDUIT_SIZES]
+    cab = [l for l in labs_all if l["size"] > max(CONDUIT_SIZES)]
+    bad = [l for l in labs_all if l["size"] <= max(CONDUIT_SIZES) and l["size"] not in CONDUIT_SIZES]
+    rec["cables_in_tray"] = [{"size": l["size"], "type": l["type"], "el": l["el"]} for l in cab]
+    if cab: rec["flags"].append(f"{len(cab)} label >{max(CONDUIT_SIZES)} mm ({sorted({l['size'] for l in cab})}) = kabel pada tray/ladder, BUKAN conduit; dikeluarkan dari hitungan conduit")
+    if bad: rec["flags"].append(f"{len(bad)} label ukuran di luar daftar conduit ({sorted({l['size'] for l in bad})}): kemungkinan salah baca OCR, dikeluarkan; cek visual")
     for l in labs: l["x_pt"], l["y_pt"] = l["x"] * PX_TO_PT, l["y"] * PX_TO_PT
     rec["labels"] = [{k2: l[k2] for k2 in ("size", "type", "el", "conf", "known", "low_conf", "x_pt", "y_pt")} for l in labs]
     if row["items"].get("conduit"):
