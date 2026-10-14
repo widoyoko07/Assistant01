@@ -28,5 +28,12 @@ class SheetDetail(unittest.TestCase):
         )
         self.assertEqual(S.LETTER_W["D"], 400)
 
+    def test_ukuran_conduit_maks_104(self):
+        self.assertEqual(max(S.CONDUIT_SIZES), 104)
+        self.assertNotIn(150, S.CONDUIT_SIZES)
+        self.assertNotIn(200, S.CONDUIT_SIZES)
+        self.assertIn(92, S.CONDUIT_SIZES)
+
+
 if __name__ == "__main__":
     unittest.main()
