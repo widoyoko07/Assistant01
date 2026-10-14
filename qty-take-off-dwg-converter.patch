@@ -1,0 +1,187 @@
+diff --git a/qty-take-off/SKILL.md b/qty-take-off/SKILL.md
+index 335f451..65aea3f 100644
+--- a/qty-take-off/SKILL.md
++++ b/qty-take-off/SKILL.md
+@@ -23,7 +23,7 @@ Bahasa: Indonesia, singkat. Keraguan disebut di AWAL jawaban.
+ | File | Perlakuan |
+ |---|---|
+ | `.dxf` | langsung `inspect`/`plan` |
+-| `.dwg` | skrip mencoba konversi (`dwg2dxf` atau `ODAFileConverter`, bila ada). Gagal = skrip mengeluarkan instruksi; sampaikan ke user: ekspor **SAVEAS DXF (2013/2018)** atau **PLOT ke PDF vektor**, lalu unggah ulang. Jangan mencoba build converter dari source (15+ menit, hasil pada DWG besar tetap gagal). |
++| `.dwg` | skrip mencoba konversi (`dwg2dxf` atau `ODAFileConverter`, bila ada). Converter belum ada = coba `bash scripts/setup_converter.sh` SEKALI (apt `libredwg-utils`, tanpa jaminan untuk DWG besar/2018). Tetap gagal = sampaikan ke user: konversi di laptop dengan `scripts/convert_local.py` / `convert_local.bat` (ODA File Converter, jalur paling andal), atau ekspor **SAVEAS DXF (2013/2018)** / **PLOT ke PDF vektor**, lalu unggah ulang. Jangan mencoba build converter dari source (15+ menit, hasil pada DWG besar tetap gagal). |
+ | `.pdf` | jalur PDF; wajib vektor (CAD plot), bukan scan |
+ 
+ **2. Inspect**: `python3 scripts/takeoff.py inspect <file> --out /tmp/tk`
+@@ -75,6 +75,8 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya,
+ | `scripts/batch.py` | mode batch PDF gabungan, set, duplikat, rekap per area |
+ | `scripts/cad.py` | konversi DWG->DXF, scan, ukur entitas DXF |
+ | `scripts/conduit.py` | conduit per ukuran x jenis: OCR label, alokasi proporsional, Excel rekap per area |
++| `scripts/setup_converter.sh` | coba pasang `dwg2dxf` (LibreDWG) di sandbox Linux |
++| `scripts/convert_local.py`, `convert_local.bat` | konversi DWG->DXF di laptop user via ODA File Converter (batch folder) |
+ | `scripts/config.default.json` | warna, lebar tray, parameter ukur, deret grid, layer |
+ | `tests/` | tes sintetis PDF dan DXF + regresi PDF asli |
+ | `references/saran-optimasi.md` | temuan uji, saran optimasi, checklist QA |
+diff --git a/qty-take-off/scripts/cad.py b/qty-take-off/scripts/cad.py
+index 1301e3d..4160629 100644
+--- a/qty-take-off/scripts/cad.py
++++ b/qty-take-off/scripts/cad.py
+@@ -36,8 +36,9 @@ def convert_dwg(path, out_dir, timeout=280):
+     ver = dwg_version(path); size = os.path.getsize(path) / 1e6
+     kind, bin_ = find_converter()
+     hint = (f"DWG {ver}, {size:.0f} MB tidak dapat dikonversi otomatis di sini. Minta user mengekspor dari AutoCAD: "
+-            "SAVEAS -> DXF (versi 2013/2018 ASCII), atau PDF vektor (PLOT, bukan scan), lalu unggah ulang.")
+-    if not kind: raise ConvertError("Tidak ada converter DWG (dwg2dxf/ODAFileConverter). " + hint)
++            "SAVEAS -> DXF (versi 2013/2018 ASCII), atau PDF vektor (PLOT, bukan scan), lalu unggah ulang. "
++            "Alternatif: konversi di laptop dengan scripts/convert_local.py (ODA File Converter), lalu unggah DXF-nya.")
++    if not kind: raise ConvertError("Tidak ada converter DWG (dwg2dxf/ODAFileConverter); coba `bash scripts/setup_converter.sh` sekali. " + hint)
+     out = os.path.join(out_dir, os.path.splitext(os.path.basename(path))[0] + ".dxf")
+     try:
+         if kind == "dwg2dxf":
+diff --git a/qty-take-off/scripts/convert_local.bat b/qty-take-off/scripts/convert_local.bat
+new file mode 100644
+index 0000000..f4911ae
+--- /dev/null
++++ b/qty-take-off/scripts/convert_local.bat
+@@ -0,0 +1,6 @@
++@echo off
++rem Seret folder (atau file .dwg) ke file ini, atau: convert_local.bat "C:\gambar\RFS-020026"
++rem Butuh Python dan ODA File Converter terpasang.
++if "%~1"=="" (echo Pakai: convert_local.bat "folder-atau-file.dwg" & pause & exit /b 1)
++python "%~dp0convert_local.py" "%~1"
++pause
+diff --git a/qty-take-off/scripts/convert_local.py b/qty-take-off/scripts/convert_local.py
+new file mode 100644
+index 0000000..1441ed1
+--- /dev/null
++++ b/qty-take-off/scripts/convert_local.py
+@@ -0,0 +1,67 @@
++#!/usr/bin/env python3
++"""Konversi DWG -> DXF (ACAD2018 ASCII) di LAPTOP user memakai ODA File Converter (gratis).
++Jalur paling andal untuk DWG besar. Hasil DXF diunggah ke chat Claude, lalu jalankan takeoff.py seperti biasa.
++
++  python convert_local.py FOLDER_ATAU_FILE.dwg [--out FOLDER_DXF] [--version ACAD2018]
++
++ODA File Converter: https://www.opendesign.com/guestfiles/oda_file_converter (pasang dulu).
++Lokasi dicari di: env ODA_BIN, PATH, lalu folder instalasi Windows/macOS/Linux umum."""
++import argparse, glob, os, shutil, subprocess, sys, tempfile
++
++CANDIDATES = [
++    r"C:\Program Files\ODA\ODAFileConverter*\ODAFileConverter.exe",
++    r"C:\Program Files (x86)\ODA\ODAFileConverter*\ODAFileConverter.exe",
++    "/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter",
++    "/usr/bin/ODAFileConverter", "/opt/ODAFileConverter/ODAFileConverter",
++]
++
++
++def find_oda():
++    p = os.environ.get("ODA_BIN")
++    if p and os.path.exists(p): return p
++    p = shutil.which("ODAFileConverter")
++    if p: return p
++    for pat in CANDIDATES:
++        hits = sorted(glob.glob(pat))
++        if hits: return hits[-1]
++    return None
++
++
++def verify(dxf):
++    """Baca balik DXF bila ezdxf ada; return (ok, pesan)."""
++    if not os.path.exists(dxf) or os.path.getsize(dxf) < 1000: return False, "file hasil tidak ada/terlalu kecil"
++    try: import ezdxf
++    except ModuleNotFoundError: return True, "ezdxf tidak terpasang, hasil belum diverifikasi (pip install ezdxf)"
++    try: ezdxf.readfile(dxf); return True, "terbaca ezdxf"
++    except Exception as e: return False, f"ezdxf gagal membaca ({type(e).__name__})"
++
++
++def main():
++    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
++    ap.add_argument("src", help="file .dwg atau folder berisi .dwg")
++    ap.add_argument("--out", help="folder hasil (default: <src>/dxf_out)")
++    ap.add_argument("--version", default="ACAD2018", help="versi DXF keluaran (default ACAD2018)")
++    a = ap.parse_args()
++    oda = find_oda()
++    if not oda: sys.exit("ODA File Converter tidak ditemukan. Pasang dulu, atau set env ODA_BIN ke ODAFileConverter(.exe).")
++    src = os.path.abspath(a.src)
++    if os.path.isfile(src):
++        if not src.lower().endswith(".dwg"): sys.exit("File harus berekstensi .dwg")
++        files, work = [os.path.basename(src)], tempfile.mkdtemp(); shutil.copy(src, work); base = os.path.dirname(src)
++    elif os.path.isdir(src):
++        files = sorted(f for f in os.listdir(src) if f.lower().endswith(".dwg")); work = src; base = src
++    else: sys.exit(f"Tidak ditemukan: {src}")
++    if not files: sys.exit("Tidak ada file .dwg.")
++    out = os.path.abspath(a.out or os.path.join(base, "dxf_out")); os.makedirs(out, exist_ok=True)
++    # argumen ODA: in_dir out_dir versi_keluaran tipe recurse audit [filter]
++    r = subprocess.run([oda, work, out, a.version, "DXF", "0", "1", "*.DWG"], capture_output=True, text=True)
++    bad = 0
++    for f in files:
++        dxf = os.path.join(out, os.path.splitext(f)[0] + ".dxf"); ok, msg = verify(dxf)
++        print(f"{'OK  ' if ok else 'GAGAL'} {f} -> {dxf} ({msg})"); bad += (not ok)
++    if bad: print(f"\n{bad} file gagal. Keluaran ODA:\n{(r.stderr or r.stdout).strip()[-500:]}", file=sys.stderr)
++    else: print(f"\nSelesai. Unggah file DXF dari {out} ke chat Claude.")
++    sys.exit(1 if bad else 0)
++
++
++if __name__ == "__main__": main()
+diff --git a/qty-take-off/scripts/setup_converter.sh b/qty-take-off/scripts/setup_converter.sh
+new file mode 100755
+index 0000000..c046285
+--- /dev/null
++++ b/qty-take-off/scripts/setup_converter.sh
+@@ -0,0 +1,21 @@
++#!/usr/bin/env bash
++# Coba menyiapkan converter DWG->DXF (dwg2dxf dari LibreDWG) di sandbox/Linux. Aman dijalankan berulang.
++# Pakai: bash scripts/setup_converter.sh      Keluar 0 bila dwg2dxf siap, 1 bila tidak.
++# Catatan: paket distro belum tentu sanggup membaca DWG besar/baru (mis. AutoCAD 2018, 50+ MB).
++# Bila gagal, pakai scripts/convert_local.py (ODA File Converter) di laptop, lalu unggah DXF-nya.
++set -u
++have() { command -v dwg2dxf >/dev/null 2>&1 || [ -n "${DWG2DXF_BIN:-}" ] && [ -x "${DWG2DXF_BIN:-/nonexistent}" ]; }
++if have; then echo "OK: dwg2dxf sudah tersedia: $(command -v dwg2dxf || echo "$DWG2DXF_BIN")"; exit 0; fi
++SUDO=""; [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && SUDO="sudo"
++if command -v apt-get >/dev/null 2>&1; then
++  echo "Mencoba: apt-get install libredwg-utils ..."
++  $SUDO apt-get update -qq >/dev/null 2>&1
++  $SUDO apt-get install -y -qq libredwg-utils >/dev/null 2>&1 || echo "apt-get gagal (tidak ada izin/jaringan/paket)."
++fi
++if command -v dwg2dxf >/dev/null 2>&1; then
++  dwg2dxf --version 2>&1 | head -1
++  echo "OK: dwg2dxf terpasang. Ini belum menjamin DWG besar terbaca; hasil konversi tetap diverifikasi oleh cad.py."
++  exit 0
++fi
++echo "GAGAL: dwg2dxf tidak tersedia. Alternatif: jalankan scripts/convert_local.py (ODA File Converter) di laptop, atau ekspor SAVEAS DXF 2013/2018 / PLOT PDF vektor dari AutoCAD." >&2
++exit 1
+diff --git a/qty-take-off/tests/test_cad.py b/qty-take-off/tests/test_cad.py
+index b0e072f..aeb043d 100644
+--- a/qty-take-off/tests/test_cad.py
++++ b/qty-take-off/tests/test_cad.py
+@@ -92,4 +92,32 @@ class CAD(unittest.TestCase):
+         self.assertNotEqual(r.returncode, 0); self.assertIn("tidak cocok", r.stderr)
+         self.assertFalse(os.path.exists(os.path.join(self.d, "Takeoff_Tray_Conduit.xlsx")))
+ 
++class Converter(unittest.TestCase):
++    def setUp(self): self.d = tempfile.mkdtemp()
++    def test_find_converter_env(self):
++        from unittest import mock
++        fake = os.path.join(self.d, "dwg2dxf"); open(fake, "w").close()
++        with mock.patch.dict(os.environ, {"DWG2DXF_BIN": fake}):
++            self.assertEqual(cad.find_converter(), ("dwg2dxf", fake))
++    def test_find_converter_kosong(self):
++        from unittest import mock
++        env = {k: v for k, v in os.environ.items() if k not in ("DWG2DXF_BIN", "ODA_BIN")}
++        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(cad.shutil, "which", return_value=None):
++            self.assertEqual(cad.find_converter(), (None, None))
++    def test_pesan_error_menyebut_setup_dan_konversi_lokal(self):
++        from unittest import mock
++        bad = os.path.join(self.d, "x.dwg"); open(bad, "wb").write(b"AC1032" + os.urandom(2000))
++        with mock.patch.object(cad, "find_converter", return_value=(None, None)):
++            with self.assertRaises(cad.ConvertError) as cm: cad.convert_dwg(bad, os.path.join(self.d, "o"))
++        self.assertIn("setup_converter.sh", str(cm.exception)); self.assertIn("convert_local.py", str(cm.exception))
++    def test_convert_local_find_oda_env(self):
++        from unittest import mock
++        import convert_local as CL
++        fake = os.path.join(self.d, "ODAFileConverter"); open(fake, "w").close()
++        with mock.patch.dict(os.environ, {"ODA_BIN": fake}): self.assertEqual(CL.find_oda(), fake)
++    def test_convert_local_verify_menolak_file_kecil(self):
++        import convert_local as CL
++        small = os.path.join(self.d, "a.dxf"); open(small, "w").write("0")
++        self.assertFalse(CL.verify(small)[0]); self.assertFalse(CL.verify(os.path.join(self.d, "none.dxf"))[0])
++
+ if __name__ == "__main__": unittest.main()
