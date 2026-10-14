@@ -43,6 +43,7 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 - Skala memakai label `SCALE - 1:N` per view dan dibandingkan dengan grid; konflik dilaporkan dan hasil tetap provisional.
 - Tray diambil dari callout OCR `CABLE TRAY nnn(W)`, bukan legenda A-K. Plan dihitung horizontal; section vertikal sebagai batas atas dan belum didedup.
 - Conduit dikelompokkan menurut ukuran, jenis, dan orientasi vektor. Penempatan label ke rute terdekat selalu provisional; periksa overlay conduit.
+- Ukuran conduit valid (G-Type): 16, 22, 28, 36, 42, 54, 70, 82, 92, 104 mm. Label >104 mm = kabel pada tray/ladder, bukan conduit (dikeluarkan dari hitungan, dicatat di `cables_in_tray`); ukuran <=104 yang tidak ada di daftar = dugaan salah baca OCR, dikeluarkan dan dilaporkan.
 - Support dan elevasi diperiksa silang. OCR memerlukan Tesseract yang tersedia di PATH.
 
 **Mode batch (PDF gabungan banyak set, mis. 599 halaman)**: otomatis aktif bila halaman > 40 (atau `--batch`).
