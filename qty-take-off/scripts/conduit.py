@@ -19,7 +19,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 TYPES = ("POWER", "SIGNAL", "CONTROL")
-KNOWN_SIZES = (16, 22, 28, 36, 42, 54, 70, 82, 100, 104, 200)   # ukuran umum di gambar proyek; selain ini ditandai
+KNOWN_SIZES = (16, 22, 28, 36, 42, 54, 70, 82, 92, 104)   # ukuran umum di gambar proyek; selain ini ditandai
 SIZE_RE = re.compile(r"^([0-9OoIl]{2,3})\s*mm", re.I)
 DIGITS = str.maketrans("OoIl", "0011")
 LOW_CONF = 30
