@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 TYPES = ("POWER", "SIGNAL", "CONTROL")
 KNOWN_SIZES = (16, 22, 28, 36, 42, 54, 70, 82, 92, 104)   # ukuran umum di gambar proyek; selain ini ditandai
 SIZE_RE = re.compile(r"^([0-9OoIl]{2,3})\s*mm", re.I)
-DIGITS = str.maketrans("OoIl", "0011")
+DIGITS = str.maketrans("OoIiLl", "001111")
 LOW_CONF = 30
 KIND_LABEL = "Jumlah label"; KIND_H = "Horizontal m (estimasi, plan)"; KIND_V = "Vertikal m (batas atas, section)"
 
@@ -57,13 +57,16 @@ def type_of(tok):
 def parse_labels(words):
     """Pasangkan token ukuran ('42mmØ') dengan token jenis tepat di bawahnya (rata kiri). Return (labels, unpaired_sizes).
     Token yang diawali EL (elevasi) atau berdigit >3 diabaikan. Ukuran tanpa jenis dilaporkan, tidak dibuang diam-diam."""
-    sizes = []
+    sizes, unpaired = [], []
     for w in words:
         if w["t"].upper().lstrip("_").startswith("EL"): continue
         m = SIZE_RE.match(w["t"])
-        if m: sizes.append((int(m.group(1).translate(DIGITS)), w))
+        if m:
+            normalized = m.group(1).translate(DIGITS)
+            if normalized.isdigit(): sizes.append((int(normalized), w))
+            else: unpaired.append({"size": m.group(1), "x": w["x"], "y": w["y"], "conf": w["c"]})
     types = [(type_of(w["t"]), w) for w in words]; types = [(t, w) for t, w in types if t]
-    used, labels, unpaired = set(), [], []
+    used, labels = set(), []
     for size, w in sorted(sizes, key=lambda s: (s[1]["y"], s[1]["x"])):
         best = None
         for j, (t, tw) in enumerate(types):

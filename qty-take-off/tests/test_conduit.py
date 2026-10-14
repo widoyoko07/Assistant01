@@ -16,6 +16,13 @@ class Parse(unittest.TestCase):
         lab, unp = C.parse_labels([W("7Omm\u00d8", 100, 100), W("POWFR", 100, 150), W("22mm", 800, 100)])
         self.assertEqual((lab[0]["size"], lab[0]["type"]), (70, "POWER"))
         self.assertEqual([u["size"] for u in unp], [22])                       # tidak dibuang diam-diam
+    def test_ocr_i_dan_l_dinormalisasi_tanpa_error(self):
+        words = [W("28Imm", 100, 100), W("SIGNAL", 100, 150), W("28imm", 300, 100), W("CONTROL", 300, 150),
+                 W("28Lmm", 500, 100), W("POWER", 500, 150), W("28lmm", 700, 100), W("SIGNAL", 700, 150)]
+        lab, unp = C.parse_labels(words)
+        self.assertEqual(len(lab), 4)
+        self.assertEqual({l["size"] for l in lab}, {281})
+        self.assertEqual(unp, [])
     def test_ukuran_tak_umum_dan_conf_rendah_ditandai(self):
         lab, _ = C.parse_labels([W("700mm", 100, 100, c=10), W("POWER", 100, 150)])
         self.assertFalse(lab[0]["known"]); self.assertTrue(lab[0]["low_conf"])
