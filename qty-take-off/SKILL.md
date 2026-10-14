@@ -39,6 +39,12 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 
 **6. Execute**: `python3 scripts/takeoff.py execute <file> --out /tmp/tk --confirm`, `recalc.py` skill xlsx (error 0), `present_files` `Takeoff_Tray_Conduit.xlsx`. Skrip mengikat dry-run ke hash sumber, konfigurasi, dan opsi batch. Jika tidak cocok, jalankan plan lagi; gunakan folder output baru untuk checkpoint batch yang berbeda atau lama.
 
+**Detail per sheet (PDF vektor)**: `python3 scripts/sheetdetail.py plan <pdf> --out /tmp/sd [--sheets 3,7] [--budget 240]`; OCR tersimpan di cache, jadi ulangi perintah jika belum selesai. Setelah hasil dry-run disetujui, `python3 scripts/sheetdetail.py execute <pdf> --out /tmp/sd --confirm` menghasilkan `Detail_per_Sheet.xlsx`.
+- Skala memakai label `SCALE - 1:N` per view dan dibandingkan dengan grid; konflik dilaporkan dan hasil tetap provisional.
+- Tray diambil dari callout OCR `CABLE TRAY nnn(W)`, bukan legenda A-K. Plan dihitung horizontal; section vertikal sebagai batas atas dan belum didedup.
+- Conduit dikelompokkan menurut ukuran, jenis, dan orientasi vektor. Penempatan label ke rute terdekat selalu provisional; periksa overlay conduit.
+- Support dan elevasi diperiksa silang. OCR memerlukan Tesseract yang tersedia di PATH.
+
 **Mode batch (PDF gabungan banyak set, mis. 599 halaman)**: otomatis aktif bila halaman > 40 (atau `--batch`).
 - `python3 scripts/takeoff.py plan <pdf> --out /tmp/big --budget 200` lalu ulangi perintah yang sama sampai muncul tabel (checkpoint `pages.jsonl` dengan metadata `run.json`, aman bila terhenti). Perkiraan 2-4 detik per halaman berwarna; 599 halaman sekitar 25 menit. Jalankan di background (`setsid nohup`) bila perlu dan pantau jumlah baris `pages.jsonl`. File, konfigurasi, atau opsi berbeda ditolak; gunakan folder output baru untuk run baru.
 - Set gambar dikelompokkan dari halaman DRAWING INDEX. Judul sama yang muncul berkali-kali = DUPLIKAT revisi; default hanya set terakhir dihitung, WAJIB konfirmasi revisi ke user.
