@@ -4,7 +4,7 @@
  "color_tol": 0.16,
  "px_per_pt": 6,
  "close_mm": {"tray": 423, "conduit": 212},
- "tray_widths_mm": [200, 700],
+ "tray_widths_mm": [200, 300, 400, 500, 600, 700, 800, 900, 1000],
  "content_xmax_frac": 0.9,
  "spacing_range_m": [1.0, 3.0],
  "grid_gaps_mm": [

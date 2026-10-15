@@ -32,7 +32,7 @@ def dwg_version(path):
 
 
 def find_converter():
-    for name, env in (("dwg2dxf", "DWG2DXF_BIN"), ("ODAFileConverter", "ODA_BIN")):
+    for name, env in (("ODAFileConverter", "ODA_BIN"), ("dwg2dxf", "DWG2DXF_BIN")):
         p = os.environ.get(env) or shutil.which(name)
         if p and os.path.exists(p): return name, p
     import convert_local
@@ -51,18 +51,28 @@ def convert_dwg(path, out_dir, timeout=280):
             "Alternatif: konversi di laptop dengan scripts/convert_local.py (ODA File Converter), lalu unggah DXF-nya.")
     if not kind: raise ConvertError("Tidak ada converter DWG (dwg2dxf/ODAFileConverter); coba `bash scripts/setup_converter.sh` sekali. " + hint)
     out = os.path.join(out_dir, os.path.splitext(os.path.basename(path))[0] + ".dxf")
+    produced = False
     try:
-        if kind == "dwg2dxf":
-            r = subprocess.run([bin_, "-y", "-o", out, path], capture_output=True, text=True, timeout=timeout,
-                               env={**os.environ, "LD_LIBRARY_PATH": os.path.join(os.path.dirname(os.path.dirname(bin_)), "lib") + ":" + os.environ.get("LD_LIBRARY_PATH", "")})
-        else:                              # ODAFileConverter in_dir out_dir ACAD2018 DXF 0 1 filter
-            with tempfile.TemporaryDirectory() as src:
-                shutil.copy(path, src)
-                r = subprocess.run([bin_, src, out_dir, "ACAD2018", "DXF", "0", "1", os.path.basename(path)],
+        with tempfile.TemporaryDirectory(prefix="qtytakeoff-cad-") as tmp:
+            if kind == "dwg2dxf":
+                staged = os.path.join(tmp, os.path.basename(out))
+                r = subprocess.run([bin_, "-y", "-o", staged, path], capture_output=True, text=True, timeout=timeout,
+                                   env={**os.environ, "LD_LIBRARY_PATH": os.path.join(os.path.dirname(os.path.dirname(bin_)), "lib") + ":" + os.environ.get("LD_LIBRARY_PATH", "")})
+            else:                              # ODAFileConverter in_dir out_dir ACAD2018 DXF 0 1 filter
+                src = os.path.join(tmp, "in"); converted = os.path.join(tmp, "out")
+                os.makedirs(src); os.makedirs(converted)
+                shutil.copy2(path, src)
+                r = subprocess.run([bin_, src, converted, "ACAD2018", "DXF", "0", "1", os.path.basename(path)],
                                    capture_output=True, text=True, timeout=timeout)
+                staged = os.path.join(converted, os.path.splitext(os.path.basename(path))[0] + ".dxf")
+            if os.path.isfile(staged) and os.path.getsize(staged) >= 1000:
+                try: load(staged)
+                except Exception as e: raise ConvertError(f"DXF hasil konversi tidak terbaca ({type(e).__name__}). " + hint)
+                shutil.copy2(staged, out)
+                produced = True
     except subprocess.TimeoutExpired:
         raise ConvertError(f"Konversi melebihi {timeout} detik. " + hint)
-    if not os.path.exists(out) or os.path.getsize(out) < 1000:
+    if not produced:
         tail = (r.stderr or r.stdout or "").strip().splitlines()[-2:]
         raise ConvertError(f"{kind} gagal ({' | '.join(tail)}). " + hint)
     try: load(out)
@@ -267,6 +277,49 @@ def layer_width_mm(name, cfg):
     return None
 
 
+def _rail_pair(first, second, width_m):
+    """Return whether two CAD segments are opposite rails of one tray run."""
+    (a0, a1), (b0, b1) = first, second
+    u = tuple(a1[i] - a0[i] for i in range(3)); v = tuple(b1[i] - b0[i] for i in range(3))
+    la = math.sqrt(sum(value * value for value in u)); lb = math.sqrt(sum(value * value for value in v))
+    if not la or not lb or min(la, lb) / max(la, lb) < 0.85: return False
+    cross = (u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0])
+    if math.sqrt(sum(value * value for value in cross)) / (la * lb) > 0.01: return False
+    direction = tuple(value / la for value in u)
+    offset = tuple(b0[i] - a0[i] for i in range(3))
+    along = sum(offset[i] * direction[i] for i in range(3))
+    perpendicular = tuple(offset[i] - along * direction[i] for i in range(3))
+    separation = math.sqrt(sum(value * value for value in perpendicular))
+    if abs(separation - width_m) > max(width_m * 0.05, 0.01): return False
+    p0 = sum((b0[i] - a0[i]) * direction[i] for i in range(3))
+    p1 = sum((b1[i] - a0[i]) * direction[i] for i in range(3))
+    overlap = max(0.0, min(la, max(p0, p1)) - max(0.0, min(p0, p1)))
+    return overlap / min(la, lb) >= 0.90
+
+
+def _centerline_pairs(segments_, width_mm):
+    """Replace verified side-rail pairs with one segment on their centerline."""
+    if not width_mm: return segments_, 0
+    candidates = []
+    for i, first in enumerate(segments_):
+        for j in range(i + 1, len(segments_)):
+            second = segments_[j]
+            if _rail_pair(first, second, width_mm / 1000.0):
+                candidates.append((abs(dist3(*first) - dist3(*second)), i, j))
+    paired = set(); centerlines = []
+    for _, i, j in sorted(candidates):
+        if i in paired or j in paired: continue
+        (a0, a1), (b0, b1) = segments_[i], segments_[j]
+        direct = dist3(a0, b0) + dist3(a1, b1)
+        reverse = dist3(a0, b1) + dist3(a1, b0)
+        if reverse < direct: b0, b1 = b1, b0
+        centerlines.append((tuple((a0[c] + b0[c]) / 2 for c in range(3)),
+                            tuple((a1[c] + b1[c]) / 2 for c in range(3))))
+        paired.update((i, j))
+    result = centerlines + [segment for i, segment in enumerate(segments_) if i not in paired]
+    return result, len(centerlines)
+
+
 def measure(path, cfg):
     """-> dict hasil seragam dengan jalur PDF (satu 'sheet' bernama 'Model')."""
     doc = load(path); msp = doc.modelspace(); k, uw = unit_factor_to_m(doc, cfg.get("assume_units", "mm"))
@@ -338,7 +391,8 @@ def measure(path, cfg):
         ladder = total > 0 and short / total > 0.15 and len(segments_) > 20
         usable = [segment for segment, length in zip(segments_, lengths)
                   if not ladder or length > rung_length]
-        factor = 0.5 if ladder else 1.0
+        usable, pair_count = _centerline_pairs(usable, width)
+        factor = 0.5 if ladder and not pair_count else 1.0
         key = str(width) if width else "tanpa-lebar"
         tray_lengths[key] = tray_lengths.get(key, 0.0) + sum(dist3(a, b) for a, b in usable) * factor
         orientation = G.orient_split(usable)
@@ -346,9 +400,12 @@ def measure(path, cfg):
         for axis in "hvd":
             totals[axis] += orientation[axis] * factor
         if ladder:
-            flags.append(f"tray lebar {width}: terdeteksi gambar ladder (rel+rung); panjang = rel/2; KONFIRMASI ke user")
+            flags.append(f"tray lebar {width}: pola ladder terdeteksi; segmen rung pendek dikecualikan" +
+                         ("; pasangan rel dihitung sebagai centerline" if pair_count else "; panjang rel dibagi dua, perlu konfirmasi"))
+        if pair_count:
+            flags.append(f"tray lebar {width}W: {pair_count} pasangan rel sejajar digabung menjadi centerline; periksa kemungkinan tray berdampingan")
         else:
-            for run in G.cluster_runs(segments_, link_tolerance):
+            for run in G.cluster_runs(usable, link_tolerance):
                 runs.append({
                     "width": key,
                     "n": run["n"],
