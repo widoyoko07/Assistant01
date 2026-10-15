@@ -324,6 +324,9 @@ def print_plan(res):
     print("\nCross-check support:"); [print(" - " + c) for c in res["checks"]]
     fl = [(r["sheet"], f) for r in res["sheets"] for f in r["flags"]]
     if fl: print("\nPeringatan:"); [print(f" - sheet {s}: {f}") for s, f in fl]
+    if res.get("source") == "cad":
+        import cad
+        cad.print_extra(res["sheets"][0])
 
 
 def execute(out, expected_manifest):
@@ -343,10 +346,19 @@ def execute(out, expected_manifest):
     for c in ws[ws.max_row]: c.font = Font(name="Arial", bold=True)
     for i in range(1, ws.max_column + 1): ws.column_dimensions[CL(i)].width = 90 if i == ws.max_column else 16
     wc = wb.create_sheet("Catatan")
-    wc.append(["Catatan takeoff: ukur vektor PDF, akurasi sekitar +/-5%, belum termasuk waste."]); wc["A1"].font = Font(name="Arial", bold=True)
+    source_note = ("Catatan takeoff: panjang CAD diukur dari entitas setelah konversi DWG/DXF; hasil bergantung pada satuan "
+                   "gambar, pemetaan layer, dan pemisahan view. Belum termasuk waste."
+                   if res.get("source") == "cad"
+                   else "Catatan takeoff: ukur vektor PDF, akurasi sekitar +/-5%, belum termasuk waste.")
+    wc.append([source_note]); wc["A1"].font = Font(name="Arial", bold=True)
     for c in res["checks"]: wc.append([c])
-    wc.append(["Tray vertikal dari section = batas atas dan belum didedup antar-section."])
-    wc.append(["Conduit vertikal = batas atas: section menampilkan conduit yang sama (belum dedup)."])
+    if res.get("source") == "cad":
+        import cad
+        cad.add_cad_sheets(wb, res["sheets"][0])
+        wc.append(["Garis tumpang tindih pada geometri yang sama digabung; pemisahan kategori tetap mengikuti layer CAD."])
+    else:
+        wc.append(["Tray vertikal dari section = batas atas dan belum didedup antar-section."])
+        wc.append(["Conduit vertikal = batas atas: section menampilkan conduit yang sama (belum dedup)."])
     wc.append(["Support (qty di sheet detail): " + ", ".join(f"{k}={v['qty']}" for k, v in res["supports"].items())])
     wc.column_dimensions["A"].width = 140
     path = os.path.join(out, "Takeoff_Tray_Conduit.xlsx"); wb.save(path); print("Excel:", path)

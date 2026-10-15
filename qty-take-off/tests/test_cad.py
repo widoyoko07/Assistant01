@@ -55,6 +55,27 @@ class CAD(unittest.TestCase):
         self.assertEqual(rec["tray_m"]["700"], 10.0)
         self.assertEqual(rec["conduit_h_m"], 10.0)
         self.assertTrue(any("garis ganda" in f for f in rec["flags"]))
+    def test_tumpang_tindih_sebagian_dihitung_satu_kali(self):
+        path = os.path.join(self.d, "partial-overlap.dxf")
+        doc = ezdxf.new("R2018", setup=True); doc.units = 6
+        doc.layers.add("E-TRAY-700")
+        m = doc.modelspace()
+        m.add_line((0, 0), (6, 0), dxfattribs={"layer": "E-TRAY-700"})
+        m.add_line((4, 0), (10, 0), dxfattribs={"layer": "E-TRAY-700"})
+        doc.saveas(path)
+        rec, _, _ = cad.measure(path, cfg())
+        self.assertEqual(rec["tray_m"]["700"], 10.0)
+        self.assertTrue(any("tumpang tindih" in flag for flag in rec["flags"]))
+    def test_include_window_memotong_di_batas_jendela(self):
+        path = os.path.join(self.d, "window.dxf")
+        doc = ezdxf.new("R2018", setup=True); doc.units = 6
+        doc.layers.add("E-TRAY-700")
+        doc.modelspace().add_line((0, 0), (10, 0), dxfattribs={"layer": "E-TRAY-700"})
+        doc.saveas(path)
+        config = cfg(); config["include_windows"] = [[2, -1, 8, 1]]
+        rec, _, _ = cad.measure(path, config)
+        self.assertEqual(rec["tray_m"]["700"], 6.0)
+        self.assertEqual(rec["runs"][0]["bbox_du"], [2.0, 0.0, 8.0, 0.0])
     def test_entitas_tidak_didukung_diberi_peringatan(self):
         path = os.path.join(self.d, "unsupported.dxf")
         doc = ezdxf.new("R2018", setup=True); doc.layers.add("E-TRAY-700")
@@ -71,6 +92,8 @@ class CAD(unittest.TestCase):
     def test_scan_menemukan_layer_dan_support(self):
         s = cad.scan(dxf(os.path.join(self.d, "f.dxf")), cfg()); roles = {l["layer"]: l["role_guess"] for l in s["layers"]}
         self.assertEqual((roles["E-TRAY-700"], roles["E-CONDUIT"]), ("tray", "conduit")); self.assertEqual(s["support_blocks"]["SUH-42GC"], 3); self.assertTrue(s["has_3d"])
+        tray_layer = next(layer for layer in s["layers"] if layer["layer"] == "E-TRAY-700")
+        self.assertEqual(tray_layer["bbox_du"], [0.0, 0.0, 6000.0, 4000.0])
     def test_crosscheck_spacing(self):
         d = dxf(os.path.join(self.d, "g.dxf")); out = os.path.join(self.d, "o"); os.makedirs(out)
         r = T.plan_cad(d, cfg(), out); self.assertTrue(any("700W" in c and "PERINGATAN" in c for c in r["checks"]))   # 10 m / 3 = 3.33 m
@@ -84,6 +107,11 @@ class CAD(unittest.TestCase):
         self.assertNotEqual(subprocess.run([sys.executable, s, "execute", f, "--out", self.d], capture_output=True).returncode, 0)
         subprocess.run([sys.executable, s, "execute", f, "--out", self.d, "--confirm"], check=True, capture_output=True)
         self.assertTrue(os.path.exists(os.path.join(self.d, "Takeoff_Tray_Conduit.xlsx")))
+        from openpyxl import load_workbook
+        workbook = load_workbook(os.path.join(self.d, "Takeoff_Tray_Conduit.xlsx"), read_only=True)
+        self.assertIn("Runs Tray", workbook.sheetnames)
+        self.assertIn("Tray per Orientasi", workbook.sheetnames)
+        workbook.close()
     def test_cli_execute_menolak_dxf_berbeda(self):
         f1 = dxf(os.path.join(self.d, "first.dxf")); f2 = dxf(os.path.join(self.d, "second.dxf"), dup=False)
         s = os.path.join(os.path.dirname(__file__), "..", "scripts", "takeoff.py")
@@ -99,10 +127,31 @@ class Converter(unittest.TestCase):
         fake = os.path.join(self.d, "dwg2dxf"); open(fake, "w").close()
         with mock.patch.dict(os.environ, {"DWG2DXF_BIN": fake}):
             self.assertEqual(cad.find_converter(), ("dwg2dxf", fake))
+    def test_convert_dwg_runs_converter_and_reads_back_dxf(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        source = os.path.join(self.d, "drawing.dwg")
+        with open(source, "wb") as stream:
+            stream.write(b"AC1032" + b"0" * 2000)
+        converter = os.path.join(self.d, "dwg2dxf")
+        open(converter, "w").close()
+
+        def fake_run(args, **kwargs):
+            output = args[args.index("-o") + 1]
+            ezdxf.new("R2018", setup=True).saveas(output)
+            return SimpleNamespace(stderr="", stdout="")
+
+        with mock.patch.dict(os.environ, {"DWG2DXF_BIN": converter}), \
+                mock.patch.object(cad.subprocess, "run", side_effect=fake_run):
+            result = cad.convert_dwg(source, os.path.join(self.d, "out"))
+        self.assertTrue(os.path.exists(result))
+        self.assertEqual(ezdxf.readfile(result).dxfversion, "AC1032")
     def test_find_converter_kosong(self):
         from unittest import mock
         env = {k: v for k, v in os.environ.items() if k not in ("DWG2DXF_BIN", "ODA_BIN")}
-        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(cad.shutil, "which", return_value=None):
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(cad.shutil, "which", return_value=None), \
+                mock.patch("convert_local.find_oda", return_value=None):
             self.assertEqual(cad.find_converter(), (None, None))
     def test_pesan_error_menyebut_setup_dan_konversi_lokal(self):
         from unittest import mock

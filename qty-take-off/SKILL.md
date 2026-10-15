@@ -9,7 +9,7 @@ Bahasa: Indonesia, singkat. Keraguan disebut di AWAL jawaban.
 
 ## 1. Prinsip
 1. Selalu jalankan skrip; jangan menghitung dari gambar secara visual atau dari ingatan. Angka di jawaban = keluaran skrip.
-2. Urutan sumber (paling akurat dulu): **DXF/DWG** (panjang eksak dari entitas) > **PDF vektor** (ukur garis berwarna, +/-5%) > scan/raster (ditolak).
+2. Urutan sumber (paling akurat dulu): **DXF/DWG** (panjang dari entitas CAD; hasil bergantung pada satuan dan pemetaan layer) > **PDF vektor** (ukur garis berwarna, +/-5%) > scan/raster (ditolak).
 3. Dry-run dulu (tabel di chat). Excel HANYA setelah user setuju (`execute` menolak tanpa `--confirm`).
 4. Conduit dan tray vertikal dari section PDF = BATAS ATAS (section dapat menampilkan jalur yang sama berulang). Dari DXF 3D = eksak; DXF 2D = tidak ada vertikal di geometri (dilaporkan).
 5. Tidak ada angka dikarang: skala/satuan tidak diketahui = dilaporkan dan dilewati.
@@ -33,7 +33,7 @@ Bahasa: Indonesia, singkat. Keraguan disebut di AWAL jawaban.
 **3. Plan (dry-run)**: `python3 scripts/takeoff.py plan <file> --out /tmp/tk [--config cfg.json] [--scale 3=200] [--sheets 5,14]`
 PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, cross-check support, peringatan.
 
-**4. QA**: PDF = buka `overlay/sheetXX_tray.png` (merah = garis tengah) minimal 1 sheet per tank. DXF = cek peringatan (garis ganda dibuang, ladder rel/2, satuan, 2D).
+**4. QA**: PDF = buka `overlay/sheetXX_tray.png` (merah = garis tengah) minimal 1 sheet per tank. DXF/DWG = cek satuan, pemetaan layer/lebar, XREF, paper space, duplikasi, deteksi ladder, dan apakah plan/section di model space perlu dipisah dengan `include_windows`. `inspect` menampilkan bbox per layer; `cad.py suggest FILE.dxf --out cfg.json` membuat template layer yang wajib diperiksa. Dry-run juga menampilkan run tray dan bbox untuk pengecekan visual; `Runs Tray` tersedia di Excel.
 
 **5. Tanya satu kalimat**: "Jadikan Excel?" Tunggu jawaban.
 
