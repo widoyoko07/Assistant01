@@ -13,6 +13,7 @@ Bahasa: Indonesia, singkat. Keraguan disebut di AWAL jawaban.
 3. Dry-run dulu (tabel di chat). Excel HANYA setelah user setuju (`execute` menolak tanpa `--confirm`).
 4. Conduit dan tray vertikal dari section PDF = BATAS ATAS (section dapat menampilkan jalur yang sama berulang). Dari DXF 3D = eksak; DXF 2D = tidak ada vertikal di geometri (dilaporkan).
 5. Tidak ada angka dikarang: skala/satuan tidak diketahui = dilaporkan dan dilewati.
+6. **Semua quantity jalur material adalah panjang centerline**, bukan keliling/frame atau jumlah seluruh garis batas. Satu tray ladder/frame dan satu pipa conduit masing-masing dihitung satu kali per rute.
 
 ## 2. Workflow
 **0. Ambil file** (tanyakan sumbernya satu kalimat bila tidak jelas):
@@ -27,13 +28,13 @@ Bahasa: Indonesia, singkat. Keraguan disebut di AWAL jawaban.
 | `.pdf` | jalur PDF; wajib vektor (CAD plot), bukan scan |
 
 **2. Inspect**: `python3 scripts/takeoff.py inspect <file> --out /tmp/tk`
-- DXF/DWG: layer + panjang + kandidat tray/conduit, satuan (INSUNITS), 3D atau 2D, blok support, layout/xref. Minta user mengonfirmasi **pemetaan layer** (atur lewat `--config`: `layers`, `layer_widths`).
+- DXF/DWG: layer + panjang + kandidat tray/conduit, satuan (INSUNITS), 3D atau 2D, blok support, layout/xref. Minta user mengonfirmasi **pemetaan layer** (atur lewat `--config`: `layers`, `layer_widths`) dan status geometri centerline/boundary.
 - PDF: peran sheet, skala label vs geometri grid.
 
 **3. Plan (dry-run)**: `python3 scripts/takeoff.py plan <file> --out /tmp/tk [--config cfg.json] [--scale 3=200] [--sheets 5,14]`
 PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, cross-check support, peringatan.
 
-**4. QA**: PDF = buka `overlay/sheetXX_tray.png` (merah = garis tengah) minimal 1 sheet per tank. DXF/DWG = cek satuan, pemetaan layer/lebar, XREF, paper space, duplikasi, deteksi ladder, dan apakah plan/section di model space perlu dipisah dengan `include_windows`. `inspect` menampilkan bbox per layer; `cad.py suggest FILE.dxf --out cfg.json` membuat template layer yang wajib diperiksa. Dry-run juga menampilkan run tray dan bbox untuk pengecekan visual; `Runs Tray` tersedia di Excel.
+**4. QA**: PDF = buka `overlay/sheetXX_tray.png` (merah = garis tengah) minimal 1 sheet per tank. DXF/DWG = cek satuan, pemetaan layer/lebar, XREF, paper space, duplikasi, deteksi ladder, **pasangan rail dan centerline conduit**, dan apakah plan/section di model space perlu dipisah dengan `include_windows`. `inspect` menampilkan bbox per layer; `cad.py suggest FILE.dxf --out cfg.json` membuat template layer yang wajib diperiksa. Dry-run juga menampilkan run tray dan bbox untuk pengecekan visual; `Runs Tray` tersedia di Excel.
 
 **5. Tanya satu kalimat**: "Jadikan Excel?" Tunggu jawaban.
 
@@ -41,7 +42,7 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 
 **Detail per sheet (PDF vektor)**: `python3 scripts/sheetdetail.py plan <pdf> --out /tmp/sd [--sheets 3,7] [--budget 240]`; OCR tersimpan di cache, jadi ulangi perintah jika belum selesai. Setelah hasil dry-run disetujui, `python3 scripts/sheetdetail.py execute <pdf> --out /tmp/sd --confirm` menghasilkan `Detail_per_Sheet.xlsx`.
 - Skala memakai label `SCALE - 1:N` per view dan dibandingkan dengan grid; konflik dilaporkan dan hasil tetap provisional.
-- Tray diambil dari callout OCR `CABLE TRAY nnn(W)`, bukan legenda A-K. Plan dihitung horizontal; section vertikal sebagai batas atas dan belum didedup.
+- Tray diambil dari callout OCR `CABLE TRAY nnn(W)`, bukan legenda A-K. Keterangan `Cable Tray 400(W) x 100(H)` wajib dipetakan sebagai type `400W x 100H`; nilai `W` dan `H` tidak boleh dicampur atau dihilangkan. Plan dihitung horizontal; section vertikal sebagai batas atas dan belum didedup.
 - Conduit dikelompokkan menurut ukuran, jenis, dan orientasi vektor. Penempatan label ke rute terdekat selalu provisional; periksa overlay conduit.
 - Ukuran conduit valid (G-Type): 16, 22, 28, 36, 42, 54, 70, 82, 92, 104 mm. Label >104 mm = kabel pada tray/ladder, bukan conduit (dikeluarkan dari hitungan, dicatat di `cables_in_tray`); ukuran <=104 yang tidak ada di daftar = dugaan salah baca OCR, dikeluarkan dan dilaporkan.
 - Support dan elevasi diperiksa silang. OCR memerlukan Tesseract yang tersedia di PATH.
@@ -59,13 +60,18 @@ PDF 30 sheet sekitar 1-2 menit; DXF hitungan detik. Tampilkan tabel apa adanya, 
 
 ## 3. Aturan baca hasil
 - **PDF**: tray total dari plan ditambah tray vertikal dari section (batas atas, belum didedup); conduit horizontal dari plan, vertikal dari section (batas atas). Lebar dipilih dari callout tray dan legenda/support bila tersedia; pembagian panjang per lebar tetap estimasi geometri raster dan total panjang keseluruhan lebih dapat dipercaya. Skala dicek terhadap geometri grid; label bertentangan dengan >=6 garis grid = pakai geometri + peringatan (RFS-020026.06: sheet 3 dan 4 berlabel 1:120, geometri 1:200). Override `--scale SHEET=N`.
-- **DXF/DWG**: panjang dari LINE/POLYLINE/ARC/SPLINE + isi blok (rekursif). Garis koordinat sama dibuang per jenis material. Tray berlebar terpetakan juga diperiksa untuk pasangan rel sejajar dengan jarak sesuai lebar; pasangan dihitung sebagai satu centerline dan dicatat dalam warning/trace hasil. Segmen ladder pendek dikecualikan hanya saat pola ladder terdeteksi. Geometri gagal dibaca, tipe entitas belum didukung, XREF/paper space, dan layer magenta/hijau belum dipetakan ditandai untuk pemeriksaan; jangan anggap hasil lengkap sebelum dicek. Lebar tray dari angka di nama layer (mis. `E-TRAY-500`) atau `layer_widths`; tanpa lebar = kelas `tanpa-lebar` + peringatan. `INSUNITS=0` = asumsi `assume_units` + peringatan.
+- **DXF/DWG**: panjang material wajib dihitung dari **centerline** LINE/POLYLINE/ARC/SPLINE + isi blok (rekursif), bukan dari seluruh garis batas. Garis koordinat sama dibuang per jenis material.
+  - Tray ladder/frame: pasangan rail sejajar dengan jarak sesuai `W` dihitung sebagai **satu garis tengah**; rung/anak tangga dan garis frame pendek tidak dihitung. Jika pasangan rail tidak dapat dibuktikan, jangan membagi panjang secara diam-diam; laporkan `centerline tidak terverifikasi` dan keluarkan dari angka final atau tandai provisional.
+  - Conduit/pipa: satu rute conduit dihitung satu kali pada centerline. Dua garis sisi/outline pipa, polyline batas, dan lingkaran penampang tidak boleh dijumlahkan sebagai dua atau lebih panjang; bila centerline tidak tersedia, lakukan rekonstruksi tengah hanya jika pasangan/batasnya terverifikasi, selain itu laporkan sebagai `boundary/centerline tidak terverifikasi`.
+  - Geometri 3D memakai panjang centerline 3D; geometri 2D tidak boleh diklaim memiliki panjang vertikal. Geometri gagal dibaca, tipe entitas belum didukung, XREF/paper space, layer magenta/hijau belum dipetakan, dan centerline yang gagal direkonstruksi ditandai untuk pemeriksaan; jangan anggap hasil lengkap sebelum dicek.
+  - Lebar tray dari callout `W×H`, angka di nama layer (mis. `E-TRAY-500`), atau `layer_widths`; tanpa lebar/type terverifikasi = kelas `tanpa-lebar` + peringatan. `INSUNITS=0` = asumsi `assume_units` + peringatan.
 - **Support**: PDF = qty dari sheet detail (`SUH-xx QTY n EA`); DXF = jumlah INSERT blok `SUH-..`. Huruf kode ke lebar: `support_letter_width_mm`. Cross-check panjang tray / qty support harus 1.0-3.0 m; di luar = peringatan (rute hilang atau qty salah).
 - Status gambar bukan IFC/Approved atau ada komentar reviewer (mis. detail clamp/aksesori belum ada) = sebutkan; angka bisa berubah di revisi.
 
 ## 4. Batas yang harus disebut ke user
 - Warna garis di gambar bervariasi sedikit (mis. hijau `(0,1,0)` dan `(0,1,0.1)`, magenta `(1,0,0.97)` dan `(1,0.14,1)`); `color_tol` default 0.16 untuk menangkap semuanya. Bila PDF baru terbaca kosong atau jauh lebih kecil, survei warna dulu sebelum menyimpulkan.
 - Aksesori (clamp, elbow, flexible, splice, cover), fitting tray, dan conduit per diameter belum dihitung.
+- Garis batas/frame tray dan garis sisi/outline conduit bukan quantity tambahan; hanya centerline yang dihitung. Bila centerline tidak dapat dibuktikan, hasil wajib berstatus provisional atau tidak dihitung.
 - Tray/conduit vertikal dari PDF belum didedup; tray dari section dilaporkan sebagai batas atas. Solusi bersih = DXF 3D atau hitung per cable tag/equipment (`references/saran-optimasi.md`).
 - Sheet/tank kembar bisa tidak lengkap (RFS-020026.06: North 2 EL+1000 dan EL+5600 tanpa conduit); bandingkan dan laporkan.
 
