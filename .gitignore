@@ -1,2 +1,9 @@
 __pycache__/
 *.py[cod]
+# automation-hub
+automation-hub/data/
+dist/
+*.zip
+*.jpg
+*.xlsx
+.env

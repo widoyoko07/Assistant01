@@ -1,0 +1,16 @@
+groups:            # nama grup WA persis seperti di nama file ZIP -> kode SC
+  "SILOG TBM Pluit": SILOG
+  "TPE Daily Report": TPE
+drive:             # folder Google Drive
+  subcon_inbox: "WA Export/Subcon"
+  dagang_inbox: "WA Export/Dagangan"
+  templates: "Otomasi/Templates"
+  output: "Otomasi/Output"
+dpr:
+  template: DPR_template.xlsx
+  filename: "{no}. OWJJ-G-DPR-ENG-{yy}-{mm}-{no}-E0_Daily Progress Report {d} {Month} {yyyy}.xlsx"
+  no_start: 1263   # nomor dokumen untuk 1 Oct 2026 (aturan naiknya belum dikonfirmasi)
+  timezone: Asia/Jakarta
+categories:        # kamus kata kunci K2 -> kategori
+  Rumah Tangga: [listrik, pdam, wifi, galon]
+  Transportasi: [bensin, tol, parkir]
