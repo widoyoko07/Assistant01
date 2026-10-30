@@ -101,6 +101,22 @@ class PlanApplyTest(unittest.TestCase):
             self.assertEqual(src.read_bytes(), before)
 
 
+class MapRoleTest(unittest.TestCase):
+    def test_new_roles_default_and_override_and_alias(self):
+        ms = CFG["me_sheet"]
+        self.assertEqual(MS.map_role("Terminasi (role baru)", ms), "Skilled Workers")
+        self.assertEqual(MS.map_role("Foreman ER (role baru)", ms), "Foreman")
+        self.assertEqual(MS.map_role("Common Labor", ms), "Commoun Labor")
+        self.assertEqual(MS.map_role("Land 1", ms), "Land 1")
+
+    def test_mapped_roles_are_summed_into_one_row(self):
+        with tempfile.TemporaryDirectory() as t:
+            src = make(t)
+            plan = MS.make_plan(src, mp(BASE + timedelta(days=1), Skilled_Workers=5, **{"Terminasi_(role_baru)": 3}), CFG)
+            self.assertEqual(plan.cells, {"F315": 8})
+            self.assertEqual(len(plan.mapped), 1)
+
+
 class SingleWritePathTest(unittest.TestCase):
     def test_me_sheet_has_no_direct_writers(self):
         src = (Path(MS.__file__)).read_text(encoding="utf-8")

@@ -96,3 +96,8 @@ me_sheet:          # sheet ME di Subcontractor MP.xlsx: satu blok per SC (nama d
     BCP: BCP
   role_alias:      # penulisan role di Daily MP -> penulisan di sheet
     Common Labor: Commoun Labor
+  new_role_default: Skilled Workers   # role baru dari Daily MP (mis. Terminasi, LPS) dicatat sebagai Skilled Workers, seperti isian manual
+  role_map:        # pengecualian role baru -> baris sheet
+    Foreman ER: Foreman
+skip_sc: [BME]     # SC yang belum ada aktivitas di site: dilewati oleh cek_data
+me_group: "OWJJ Construction M&E"   # grup narasi + foto progres (bukan SC); dicek oleh cek_data

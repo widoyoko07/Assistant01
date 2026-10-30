@@ -31,6 +31,7 @@ class Plan:
     same: list = field(default_factory=list)        # sel sudah berisi angka yang sama
     conflicts: list = field(default_factory=list)   # (ref, SC, role, di sheet, dari Daily MP)
     notes: list = field(default_factory=list)
+    mapped: list = field(default_factory=list)      # role Daily MP yang dipetakan ke baris lain di sheet
 
 
 def _col_letter(n):
@@ -56,6 +57,18 @@ def _blocks(ws, cfg_ms):
     return out
 
 
+_NEW_ROLE = " (role baru)"
+
+
+def map_role(posisi, ms):
+    """Role Daily MP -> baris di sheet. Role baru ('X (role baru)') mengikuti ms['role_map'][X], bila tidak ada
+    masuk ms['new_role_default']; selain itu hanya alias ejaan."""
+    if posisi.endswith(_NEW_ROLE):
+        base = posisi[: -len(_NEW_ROLE)].strip()
+        return ms.get("role_map", {}).get(base, ms.get("new_role_default", posisi))
+    return ms.get("role_alias", {}).get(posisi, posisi)
+
+
 def make_plan(xlsx, mp, cfg):
     """Bandingkan JSON Daily MP dengan sheet ME. Tidak menulis apa pun."""
     import openpyxl
@@ -75,14 +88,19 @@ def make_plan(xlsx, mp, cfg):
             continue
         r0, r1 = blocks[name]
         rowof = {str(ws.cell(r, 4).value).strip(): r for r in range(r0, r1 + 1) if ws.cell(r, 4).value}
+        agg = {}      # label di sheet -> jumlah; beberapa role Daily MP bisa menuju satu baris
         for row in mp["rows"]:
             v = row["values"].get(sc)
             if not isinstance(v, int) or v <= 0 or "tanpa rincian" in row["posisi"]:
                 continue
-            label = alias.get(row["posisi"], row["posisi"])
+            label = map_role(row["posisi"], ms)
+            if label != row["posisi"] and label not in alias.values():
+                plan.mapped.append(f"{sc}: '{row['posisi']}' ({v}) -> {label}")
+            agg[label] = agg.get(label, 0) + v
+        for label, v in agg.items():
             r = rowof.get(label)
             if r is None:
-                plan.notes.append(f"{sc}: role '{row['posisi']}' ({v}) tidak punya baris di blok {name}, tidak ditulis")
+                plan.notes.append(f"{sc}: role '{label}' ({v}) tidak punya baris di blok {name}, tidak ditulis")
                 continue
             ref, cur = f"{_col_letter(col)}{r}", ws.cell(r, col).value
             if cur in ABSENT:
@@ -102,6 +120,7 @@ def report(plan):
            f"{len(plan.conflicts)} berbeda dari isian Anda (TIDAK diganti)"]
     out += [f"  isi  {ref} = {v}" for ref, v in plan.cells.items()]
     out += [f"  BEDA {ref} {sc} {role}: sheet={cur}, Daily MP={new}" for ref, sc, role, cur, new in plan.conflicts]
+    out += [f"  dipetakan: {m}" for m in plan.mapped]
     out += [f"  catatan: {n}" for n in plan.notes]
     return "\n".join(out)
 
