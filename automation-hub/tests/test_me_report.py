@@ -93,5 +93,41 @@ class HoursTest(unittest.TestCase):
         self.assertEqual(rows[0]["work_description"], "- Install pipe\n- Filling water")
 
 
+class WorkDescriptionSourcesTest(unittest.TestCase):
+    def test_posting_items_per_sc_rule(self):
+        wd = CFG["wd"]
+        self.assertEqual(R.posting_items("Total MP = 5\nPLAN:\nSPV Jemari - LPS ( mp 29) \n1. Welding\n", wd["WME"]),
+                         ["SPV Jemari - LPS", "1. Welding"])
+        self.assertEqual(R.posting_items("x\nWORK DESCRIPTION\n1. Fabrikasi\n", wd["SILOG"]), ["1. Fabrikasi"])
+        self.assertEqual(R.posting_items("a\nheadwork\n1. Chipping\n\nTotal staff: 3", wd["TPE"]), ["headwork", "1. Chipping"])
+        self.assertEqual(R.posting_items("Thursday 29-10-2026 workpalnt\nWASEFLOW\n. lifting pipe", wd["TODJO"]), ["WASEFLOW", ". lifting pipe"])
+
+    def test_sc_without_rule_gives_nothing_not_a_guess(self):
+        self.assertNotIn("WKP", CFG["wd"])
+        self.assertEqual(R.posting_items("HSE DAILY REPORT PT. WKP\n1. Planning", CFG["wd"].get("WKP")), [])
+
+    def test_same_item_under_different_areas_is_kept(self):
+        got = R.merge_items(["STB", "- Touch up painting", "LPS", "- Touch up painting", "- Touch up painting"])
+        self.assertEqual([l for l, _ in got], ["STB", "- Touch up painting", "LPS", "- Touch up painting"])
+
+    def test_same_item_in_sc_and_me_same_area_written_once(self):
+        got = R.merge_items(["LPS", "1. Install tray"], ["LPS", "- Install tray", "- Dressing cable"])
+        self.assertEqual([(l, n) for l, n in got], [("LPS", 0), ("1. Install tray", 0), ("- Dressing cable", 1)])
+
+    def test_csv_merges_posting_and_me_with_source_column(self):
+        import csv, tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as t:
+            d = Path(t) / "02_mp"
+            d.mkdir(parents=True)
+            (d / "SILOG TBM 20261026 Posting.txt").write_text("x\nWORK DESCRIPTION\n1. Fabrikasi\n", encoding="utf-8")
+            ms = [msg("2026-10-26T21:26:00", "SILOG OT 26 Oct 2026\nworkshop\n- fabrication conduit")]
+            p = R.write_csv(ms, CFG, root=Path(t))
+            with open(p, encoding="utf-8-sig") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual([(r["sc"], r["overtime"], r["sumber"]) for r in rows], [("SILOG", "Y", "SC+ME")])
+        self.assertEqual(rows[0]["work_description"], "1. Fabrikasi\nworkshop\n- fabrication conduit")
+
+
 if __name__ == "__main__":
     unittest.main()

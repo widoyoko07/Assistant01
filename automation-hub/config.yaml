@@ -47,6 +47,13 @@ tbm:               # pengenal pesan Posting TBM per SC di grup WA SC (hanya SC y
   TODJO:                                  # grup hanya mengirim workplan (tanpa blok Man Power); ejaan 'workplant/workpalne/...' bervariasi
     header_re: "work\\s*p(?:la|al)n"
     date: text                            # sering dikirim terlambat; pakai tanggal di teks
+wd:                # bagian rencana kerja di Posting.txt per SC (untuk Work Description DPR)
+  SILOG: {start: "^WORK DESCRIPTION"}
+  WME: {start: "^PLAN"}
+  DHJ: {start: "^Plan"}
+  TPE: {start: "^headwork", keep_start: true, stop: "^Total staff"}
+  TODJO: {skip_first: 1}
+  # WKP tidak punya rencana kerja di Posting -> hanya dari grup ME
 drive:             # folder Google Drive
   subcon_inbox: "WA Export/Subcon"
   dagang_inbox: "WA Export/Dagangan"

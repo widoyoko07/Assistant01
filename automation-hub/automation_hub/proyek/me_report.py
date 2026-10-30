@@ -76,38 +76,109 @@ def collect(messages, cfg, log=None):
     return parts, sorted(by_key.values(), key=lambda r: (r["date"], r["sc"]))
 
 
-def work_description(parts, sc, date):
-    """Butir kerja satu SC pada satu tanggal: laporan harian dan lembur digabung, urutan chat, tanpa duplikat.
-    Baris 'MP: n' dibuang (angka manpower diambil dari Daily MP, bukan dari narasi)."""
+def _keyed(lines):
+    """(konteks, butir, baris): konteks = judul area terakhir (baris tanpa tanda butir). Butir yang sama di area
+    berbeda ("- Touch up painting" di STB dan di LPS) adalah pekerjaan berbeda, jadi bukan duplikat."""
+    ctx = ""
+    for line in lines:
+        if not _BULLET.match(line):
+            ctx = line.lower().strip(" :-")
+        yield ctx, _BULLET.sub("", line).strip().lower(), line
+
+
+def merge_items(*sources):
+    """Gabung beberapa daftar butir, urutan sumber dipertahankan. Duplikat = butir dan area sama.
+    Kembalikan [(baris, nomor_sumber)]."""
     seen, out = set(), []
-    for p in parts:
-        if p["sc"] != sc or p["date"] != date:
-            continue
-        for line in p["lines"]:
-            key = _BULLET.sub("", line).strip().lower()
-            if not key or re.match(r"mp\s*:", key) or _LABEL.match(key) or key in seen:
+    for n, lines in enumerate(sources):
+        for ctx, key, line in _keyed(lines):
+            if not key or (ctx, key) in seen:
                 continue
-            seen.add(key)
-            out.append(line)
+            seen.add((ctx, key))
+            out.append((line, n))
     return out
 
 
+def work_description(parts, sc, date):
+    """Butir kerja satu SC pada satu tanggal dari narasi grup ME: laporan harian dan lembur digabung.
+    Baris 'MP: n' dan label 'Activity:' dibuang (angka manpower diambil dari Daily MP, bukan dari narasi)."""
+    lines = []
+    for p in parts:
+        if p["sc"] == sc and p["date"] == date:
+            lines += [l for l in p["lines"] if not re.match(r"mp\s*:", l.strip().lower()) and not _LABEL.match(l.strip().lower())]
+    return [l for l, _ in merge_items(lines)]
+
+
+_INVISIBLE = re.compile("[\u200e\u200f\u2060\ufeff]")
+_MP_NOTE = re.compile(r"\(\s*(?:mp\s*)?\d+\s*(?:mp|persons?|orang)?\s*\)", re.I)  # "(mp 29)", "(21 mp)"
+
+
+def posting_items(text, rule):
+    """Butir kerja dari satu Posting.txt SC. rule (config.wd[SC]): start = baris awal bagian kerja,
+    stop = baris penutup, skip_first = buang N baris judul. Tanpa rule: [] (bukan ditebak)."""
+    if not rule:
+        return []
+    lines = [_INVISIBLE.sub("", l).strip() for l in text.splitlines()]
+    lines = lines[rule.get("skip_first", 0):]
+    if rule.get("start"):
+        start = re.compile(rule["start"], re.I)
+        idx = next((i for i, l in enumerate(lines) if start.search(l)), None)
+        if idx is None:
+            return []
+        lines = lines[idx + (0 if rule.get("keep_start") else 1):]
+    if rule.get("stop"):
+        stop = re.compile(rule["stop"], re.I)
+        idx = next((i for i, l in enumerate(lines) if stop.search(l)), None)
+        if idx is not None:
+            lines = lines[:idx]
+    out = []
+    for l in lines:
+        l = _MP_NOTE.sub("", l).strip()
+        if l:
+            out.append(l)
+    return out
+
+
+def posting_files(root=None):
+    """{(tanggal, SC): isi} dari data/02_mp/<SC> TBM <YYYYMMDD> Posting.txt."""
+    found = {}
+    for path in cfgmod.data_dir(root=root).joinpath("02_mp").glob("* TBM ???????? Posting.txt"):
+        sc, _, d, _ = path.name.split(" ")
+        found[(f"{d[:4]}-{d[4:6]}-{d[6:]}", sc)] = path.read_text(encoding="utf-8")
+    return found
+
+
 def write_csv(messages, cfg, root=None, log=None):
-    """Draf narasi ME: satu baris per (tanggal, SC) ke data/03_me/narasi_<dari>_<sampai>.csv.
-    Kolom jam sudah mengikuti aturan OT (21.00 / 12 jam). Draf ini untuk dicek manual sebelum masuk DPR."""
+    """Draf Work Description ME: satu baris per (tanggal, SC) ke data/03_me/narasi_<dari>_<sampai>.csv.
+    Butir kerja = rencana kerja di Posting SC (config.wd) + narasi grup ME (laporan harian & lembur).
+    Jam mengikuti aturan OT (21.00 / 12 jam). Draf ini dicek manual sebelum masuk DPR."""
     log = log or RunLog("me_report", root=root)
     parts, daily = collect(messages, cfg, log)
-    if not daily:
-        log.warn("tidak ada laporan ME ditemukan")
+    recs = {(r["date"], r["sc"]): r for r in daily}
+    postings = posting_files(root)
+    for key in postings:
+        if key not in recs:
+            recs[key] = {"date": key[0], "sc": key[1], "ot": False}
+            recs[key]["start"], recs[key]["finish"], recs[key]["total"] = dpr_hours(False, cfg)
+    if not recs:
+        log.warn("tidak ada laporan ME maupun Posting ditemukan")
         return None
+    rows = sorted(recs.values(), key=lambda r: (r["date"], r["sc"]))
     out_dir = cfgmod.data_dir(root=root) / "03_me"
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"narasi_{daily[0]['date'].replace('-', '')}_{daily[-1]['date'].replace('-', '')}.csv"
+    path = out_dir / f"narasi_{rows[0]['date'].replace('-', '')}_{rows[-1]['date'].replace('-', '')}.csv"
+    wd_rules = cfg.get("wd", {})
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["date", "sc", "overtime", "start", "finish", "total_hours", "work_description"])
-        for r in daily:
-            w.writerow([r["date"], r["sc"], "Y" if r["ot"] else "", r["start"], r["finish"], r["total"],
-                        "\n".join(work_description(parts, r["sc"], r["date"]))])
+        w.writerow(["date", "sc", "overtime", "start", "finish", "total_hours", "sumber", "work_description"])
+        for r in rows:
+            sc_items = posting_items(postings.get((r["date"], r["sc"]), ""), wd_rules.get(r["sc"]))
+            me_items = work_description(parts, r["sc"], r["date"])
+            merged = merge_items(sc_items, me_items)
+            src = "+".join(n for n, k in (("SC", 0), ("ME", 1)) if any(x == k for _, x in merged))
+            if not merged:
+                log.warn(f"{r['date']} {r['sc']}: tidak ada butir kerja (aturan wd untuk SC ini belum ada atau Posting kosong)")
+            w.writerow([r["date"], r["sc"], "Y" if r["ot"] else "", r["start"], r["finish"], r["total"], src,
+                        "\n".join(l for l, _ in merged)])
     log.done(path.name)
     return path
