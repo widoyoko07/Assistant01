@@ -63,6 +63,7 @@ wd:                # bagian rencana kerja di Posting.txt per SC (untuk Work Desc
   BCP: {start: "^Akti\\w+(?:\\s+(?:kerja|team))?\\s*:", stop: "^Update\\s+(?:personil|pekerja|man\\s*power)"}
   # WKP tidak punya rencana kerja di Posting -> hanya dari grup ME
 drive:             # folder Google Drive
+  local_root: "H:\\My Drive\\WA Export"   # Drive for Desktop (huruf drive Windows) -> disalin ke data/inbox oleh drive_sync
   subcon_inbox: "WA Export/Subcon"
   dagang_inbox: "WA Export/Dagangan"
   templates: "Otomasi/Templates"
