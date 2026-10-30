@@ -69,7 +69,7 @@ class RealConfigRulesTest(unittest.TestCase):
         cls.rules = cfgmod.load()["tbm"]
 
     def test_all_verified_sc_have_rules(self):
-        self.assertEqual(set(self.rules), {"SILOG", "WME", "TPE", "DHJ", "WKP", "TODJO", "BCP"})
+        self.assertEqual(set(self.rules), {"SILOG", "WME", "TPE", "DHJ", "WKP", "TODJO", "BCP", "DJK"})
 
     def test_tpe_today_kept_tomorrow_skipped_weather_cut(self):
         r = self.rules["TPE"]

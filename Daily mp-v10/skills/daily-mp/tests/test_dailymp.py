@@ -190,6 +190,12 @@ class BcpTotalRow(unittest.TestCase):
         self.assertTrue(M.has_data(table))
 
 
+class DjkHariApostrof(unittest.TestCase):
+    def test_jumat_dengan_apostrof(self):
+        days = M.parse_djk("TBM PAGI SIFT.\nJUM'AT 30-10-2026\n\n-SPV\n   1.Aa Bb\n\n-Total Aktif : 1 Orang")
+        self.assertEqual(list(days), ["2026-10-30"])
+
+
 class JsonOutput(unittest.TestCase):
     def _run(self, *extra):
         with tempfile.TemporaryDirectory() as t:

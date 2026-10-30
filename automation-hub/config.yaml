@@ -6,6 +6,7 @@ groups:            # nama grup WA persis seperti di nama file ZIP -> kode SC
   "OWJJ-TPE Mechanical Work": TPE
   "OWJJ-WME Pipe Gallery&LPS": WME
   "OWJJ - BCP(Engineering)": BCP
+  "OWJJ-DWIJO Lahan 1": DJK
 sc_aliases:        # penulisan nama SC di pesan WA grup ME (huruf kecil) -> kode SC
   silog: SILOG
   tohoma: TODJO
@@ -48,6 +49,8 @@ tbm:               # pengenal pesan Posting TBM per SC di grup WA SC (hanya SC y
   TODJO:                                  # grup hanya mengirim workplan (tanpa blok Man Power); ejaan 'workplant/workpalne/...' bervariasi
     header_re: "work\\s*p(?:la|al)n"
     date: text                            # sering dikirim terlambat; pakai tanggal di teks
+  DJK:                                    # grup 'Dwijo Lahan 1' (DJK Service): pesan 'TBM PAGI SIFT' berisi daftar absensi
+    header_re: "TBM\\s+PAGI"
   BCP:                                    # grup engineering BCP: pesan 'Daily (report) Safety Toolbox Meeting' / 'SMT all'
     header_re: "daily\\s+(?:report\\s+)?(?:safety\\s+toolbox|smt)"
     end: "^Terima kasih"

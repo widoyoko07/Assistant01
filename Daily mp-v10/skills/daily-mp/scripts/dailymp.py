@@ -233,7 +233,7 @@ def _sm_txt(sm):
 def parse_djk(text):
     days = {}
     for block in re.split(r"(?=TBM PAGI)", text):
-        m = re.search(r"(?i)(senin|selasa|rabu|rabo|kamis|jumat|sabtu|minggu)\s+(\d{1,2})-(\d{1,2})-(\d{4})", block)
+        m = re.search(r"(?i)(senin|selasa|rabu|rabo|kamis|jum'?at|sabtu|minggu)\s+(\d{1,2})-(\d{1,2})-(\d{4})", block)
         if not m: continue
         d = f"{m.group(4)}-{int(m.group(3)):02d}-{int(m.group(2)):02d}"
         p, a = parse_numbered(block)
