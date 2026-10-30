@@ -1,6 +1,39 @@
 groups:            # nama grup WA persis seperti di nama file ZIP -> kode SC
-  "SILOG TBM Pluit": SILOG
-  "TPE Daily Report": TPE
+  "OWJJ - SILOG E&I Work": SILOG
+  "OWJJ-TM DCIP and Embedded Pipe Installation": TODJO
+  "OWJJ-DHJ MBR Crane structure + Platform Work": DHJ
+  "OWJJ-WKP SS for Other Crane": WKP
+  "OWJJ-TPE Mechanical Work": TPE
+  "OWJJ-WME Pipe Gallery&LPS": WME
+sc_aliases:        # penulisan nama SC di pesan WA grup ME (huruf kecil) -> kode SC
+  silog: SILOG
+  tohoma: TODJO
+  thm: TODJO
+  dwijo: TODJO
+  dwidjo: TODJO
+  dwj: TODJO
+  djk: DJK         # DJK Service punya grup WA sendiri, bukan di grup ME
+  dhj: DHJ
+  wkp: WKP
+  tpe: TPE
+  wme: WME
+sc_names:          # nama perusahaan di judul Posting (Detail_SCs.xlsx) -> kode SC
+  "Wasa Mitra Engineering": WME
+  "Tiga Pilar Energi": TPE
+  "Semen Indonesia Logistik": SILOG
+  "Duta Hita Jaya": DHJ
+  "Wirya Krenindo Perkasa": WKP
+  "Berkah Cipta Perkasa": BCP
+  "Tohoma Mandiri": TODJO
+  "Dwidjo Jaya Konstruksi Manpower Service": DJK
+tbm:               # pengenal pesan Posting TBM per SC di grup WA SC (hanya SC yang sudah diverifikasi)
+  SILOG:
+    header: "SEMEN INDONESIA LOGISTIK"   # nama perusahaan di judul pesan (tanpa membedakan huruf besar/kecil)
+    skip: "OVERTIME"                     # pesan 'TBM Overtime' bukan Posting harian
+    end: "^SITE CONDITION"               # baris pertama bagian penutup yang tidak ikut Posting.txt
+  WME:
+    header: "WASA MITRA ENGINEERING"
+    end: "^Loc\\. Coordination"
 drive:             # folder Google Drive
   subcon_inbox: "WA Export/Subcon"
   dagang_inbox: "WA Export/Dagangan"
@@ -11,6 +44,9 @@ dpr:
   filename: "{no}. OWJJ-G-DPR-ENG-{yy}-{mm}-{no}-E0_Daily Progress Report {d} {Month} {yyyy}.xlsx"
   no_start: 1263   # nomor dokumen untuk 1 Oct 2026 (aturan naiknya belum dikonfirmasi)
   timezone: Asia/Jakarta
+  hours:           # jam kerja subcon di DPR; lembur (laporan OT di grup ME) mengganti finish dan total
+    normal: {start: "08.00", finish: "17.00", total: 8}
+    overtime: {start: "08.00", finish: "21.00", total: 12}
 categories:        # kamus kata kunci K2 -> kategori
   Rumah Tangga: [listrik, pdam, wifi, galon]
   Transportasi: [bensin, tol, parkir]

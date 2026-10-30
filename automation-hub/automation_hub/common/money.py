@@ -30,6 +30,7 @@ def _number(num, has_unit):
 def parse_amount(text):
     """Nominal rupiah (int) dari kalimat, atau None. Kandidat bersatuan/Rp/ribuan diutamakan."""
     best = None  # (skor, nilai)
+    ambiguous = False  # dua nominal berbeda dengan skor tertinggi sama: tidak ditebak
     for m in _AMOUNT.finditer(text):
         unit = (m.group("unit") or "").lower()
         num = m.group("num")
@@ -44,9 +45,11 @@ def parse_amount(text):
         score = 3 if unit else 2 if (m.group("rp") or _THOUSANDS.match(num)) else 1 if val >= 1000 else 0
         if score == 0:
             continue  # angka kecil telanjang ("2 botol") bukan nominal
-        if best is None or score >= best[0]:
-            best = (score, int(val))
-    return best[1] if best else None
+        if best is None or score > best[0]:
+            best, ambiguous = (score, int(val)), False
+        elif score == best[0] and int(val) != best[1]:
+            ambiguous = True
+    return None if ambiguous or best is None else best[1]
 
 
 def transaction_type(text):

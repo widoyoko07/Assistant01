@@ -7,6 +7,36 @@ from automation_hub.common import wa_chat
 SAMPLES = Path(__file__).parent / "samples"
 
 
+class UsExportTest(unittest.TestCase):
+    """Export iOS bergaya AS: [MM/DD/YY, H:MM:SS AM/PM], '<image omitted>' diikuti caption."""
+    msgs = wa_chat.parse_chat(SAMPLES / "chat_us_ios.txt")
+
+    def test_order_detected_from_file(self):
+        lines = (SAMPLES / "chat_us_ios.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(wa_chat.date_order(lines), "mdy")
+
+    def test_count_and_dates(self):
+        self.assertEqual(len(self.msgs), 7)
+        self.assertEqual(self.msgs[0]["ts"], "2026-10-24T17:33:16+07:00")
+        self.assertEqual(self.msgs[-1]["ts"], "2026-10-28T09:10:41+07:00")
+
+    def test_caption_strips_omitted_marker(self):
+        m = self.msgs[1]
+        self.assertTrue(m["media_omitted"])
+        self.assertTrue(m["caption"].startswith("24/10/26 TPE\n- LPS"))
+        self.assertNotIn("omitted", m["caption"])
+
+    def test_image_without_caption_is_empty(self):
+        self.assertEqual((self.msgs[2]["caption"], self.msgs[2]["media_omitted"]), ("", True))
+
+    def test_blank_line_inside_message_kept(self):
+        self.assertIn("Cable Tray\n\nLPS", self.msgs[3]["caption"])
+
+    def test_explicit_order_overrides(self):
+        with self.assertRaises(ValueError):
+            wa_chat.parse_chat(SAMPLES / "chat_us_ios.txt", order="dmy")
+
+
 class AndroidTest(unittest.TestCase):
     msgs = wa_chat.parse_chat(SAMPLES / "chat_android.txt")
 

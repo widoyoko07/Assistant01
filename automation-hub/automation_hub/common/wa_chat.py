@@ -17,14 +17,29 @@ _ATTACH = [
     re.compile(r"(?P<f>\S+\.\w{2,5})\s+\((?:file terlampir|file attached)\)", re.I),
     re.compile(r"<(?:attached|terlampir):\s*(?P<f>[^>]+)>", re.I),
 ]
-_OMITTED = re.compile(r"<(?:Media tidak disertakan|Media omitted)>", re.I)
+_OMITTED = re.compile(
+    r"<(?:Media tidak disertakan|Media omitted|(?:image|video|audio|document|sticker|GIF) omitted)>", re.I)
+_MARKERS = re.compile(
+    r"<(?:Media tidak disertakan|Media omitted|(?:image|video|audio|document|sticker|GIF) omitted|album message)>"
+    r"|\S+\.\w{2,5}\s+\((?:file terlampir|file attached)\)|<(?:attached|terlampir):[^>]+>", re.I)
 
 
 def _clean(s):
     return s.translate(_INVISIBLE)
 
 
-def _ts(m, tz):
+def date_order(lines):
+    """'dmy' atau 'mdy' dari seluruh file: angka pertama/kedua > 12 menentukan; tanpa petunjuk = 'dmy'."""
+    first_big = second_big = False
+    for line in lines:
+        m = ANDROID.match(line) or IOS.match(line)
+        if m:
+            first_big |= int(m["d"]) > 12
+            second_big |= int(m["m"]) > 12
+    return "mdy" if second_big and not first_big else "dmy"
+
+
+def _ts(m, tz, order="dmy"):
     y = int(m["y"])
     y += 2000 if y < 100 else 0
     h = int(m["H"])
@@ -33,8 +48,9 @@ def _ts(m, tz):
         h += 12
     elif ap == "am" and h == 12:
         h = 0
-    # format tanggal Indonesia: hari/bulan/tahun
-    return datetime(y, int(m["m"]), int(m["d"]), h, int(m["M"]), int(m["S"] or 0),
+    a, b = int(m["d"]), int(m["m"])
+    day, month = (b, a) if order == "mdy" else (a, b)
+    return datetime(y, month, day, h, int(m["M"]), int(m["S"] or 0),
                     tzinfo=ZoneInfo(tz)).isoformat()
 
 
@@ -55,24 +71,27 @@ def _finish(raw):
         "ts": raw["ts"],
         "sender": sender,
         "text": text,
+        "caption": _MARKERS.sub("", text).strip(),
         "attachments": attachments,
         "media_omitted": bool(_OMITTED.search(text)),
         "system": system,
     }
 
 
-def parse_chat(path, tz="Asia/Jakarta"):
+def parse_chat(path, tz="Asia/Jakarta", order=None):
+    """order: 'dmy' / 'mdy'; None = dideteksi dari isi file."""
     messages, cur = [], None
     with open(path, encoding="utf-8-sig") as f:
-        for line in f:
-            line = _clean(line.rstrip("\r\n"))
-            m = ANDROID.match(line) or IOS.match(line)
-            if m:
-                if cur:
-                    messages.append(_finish(cur))
-                cur = {"ts": _ts(m, tz), "rest": m["rest"]}
-            elif cur is not None:
-                cur["rest"] += "\n" + line
+        lines = [_clean(l.rstrip("\r\n")) for l in f]
+    order = order or date_order(lines)
+    for line in lines:
+        m = ANDROID.match(line) or IOS.match(line)
+        if m:
+            if cur:
+                messages.append(_finish(cur))
+            cur = {"ts": _ts(m, tz, order), "rest": m["rest"]}
+        elif cur is not None:
+            cur["rest"] += "\n" + line
     if cur:
         messages.append(_finish(cur))
     return messages
@@ -100,5 +119,5 @@ def merge_exports(*message_lists):
     return sorted(by_id.values(), key=lambda m: m["ts"])
 
 
-def parse_to_jsonl(chat_path, out_path, tz="Asia/Jakarta"):
-    return write_jsonl(parse_chat(chat_path, tz), out_path)
+def parse_to_jsonl(chat_path, out_path, tz="Asia/Jakarta", order=None):
+    return write_jsonl(parse_chat(chat_path, tz, order), out_path)

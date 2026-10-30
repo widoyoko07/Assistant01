@@ -8,6 +8,7 @@ DEFAULT_CONFIG = HUB_ROOT / "config.yaml"
 
 REQUIRED = {
     "groups": None,
+    "categories": None,
     "drive": ["subcon_inbox", "dagang_inbox", "templates", "output"],
     "dpr": ["template", "filename", "no_start", "timezone"],
 }

@@ -7,6 +7,7 @@ from pathlib import Path
 from automation_hub.proyek import ingest_zip as iz
 
 CFG = {"groups": {"SILOG TBM Pluit": "SILOG", "TPE Daily Report": "TPE"}}
+DATED = "OWJJ-WME Pipe Gallery&LPS Date 20261006-20261029.zip"
 
 
 def make_zip(path, files):
@@ -20,6 +21,32 @@ class IngestTest(unittest.TestCase):
         self._t = tempfile.TemporaryDirectory()
         self.root = Path(self._t.name)
         self.addCleanup(self._t.cleanup)
+
+    def test_processed_roundtrip(self):
+        p = self.root / "processed.json"
+        self.assertEqual(iz.load_processed(p), {"sha256": [], "drive_ids": []})
+        iz.save_processed(p, {"sha256": ["a"], "drive_ids": ["d1"]})
+        self.assertEqual(iz.load_processed(p), {"sha256": ["a"], "drive_ids": ["d1"]})
+        p.write_text("bukan json", encoding="utf-8")
+        self.assertEqual(iz.load_processed(p), {"sha256": [], "drive_ids": []})
+
+    def test_date_suffix_stripped(self):
+        self.assertEqual(iz.group_from_filename(DATED), "OWJJ-WME Pipe Gallery&LPS")
+        self.assertEqual(iz.group_from_filename("WhatsApp Chat - TPE Daily Report Date 20261006.zip"), "TPE Daily Report")
+        self.assertEqual(iz.date_range_from_filename(DATED), ("20261006", "20261029"))
+        self.assertEqual(iz.date_range_from_filename("WhatsApp Chat - TPE Daily Report Date 20261006.zip"), ("20261006", "20261006"))
+        self.assertIsNone(iz.date_range_from_filename("WhatsApp Chat - TPE Daily Report.zip"))
+
+    def test_real_drive_names_map_to_sc(self):
+        from automation_hub.common import config
+        groups = config.load()["groups"]
+        for name, sc in [("OWJJ - SILOG E&I Work Date 20261006-20261029.zip", "SILOG"),
+                         ("OWJJ-DHJ MBR Crane structure + Platform Work Date 20261006-20261029.zip", "DHJ"),
+                         ("OWJJ-WKP SS for Other Crane Date 20261006-20261029.zip", "WKP"),
+                         ("OWJJ-TPE Mechanical Work Date 20261006-20261029.zip", "TPE"),
+                         ("OWJJ-TM DCIP and Embedded Pipe Installation Date 20261006-20261029.zip", "TODJO"),
+                         (DATED, "WME")]:
+            self.assertEqual(groups.get(iz.group_from_filename(name)), sc, name)
 
     def test_group_names(self):
         for name in ["WhatsApp Chat - SILOG TBM Pluit.zip", "WhatsApp Chat with SILOG TBM Pluit.zip",

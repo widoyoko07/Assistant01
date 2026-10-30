@@ -18,12 +18,21 @@ MAX_TOTAL_BYTES = 2 * 1024**3
 KINDS = {".txt": "txt", ".jpg": "jpg", ".jpeg": "jpg", ".png": "jpg", ".pdf": "pdf",
          ".mp4": "video", ".mov": "video", ".3gp": "video"}
 _NAME = re.compile(r"^(?:WhatsApp Chat(?: with| -)\s*)(?P<g>.+?)(?:\s*\(\d+\))?$", re.I)
+# akhiran tambahan manual: "<grup> Date 20261006-20261029" (atau satu tanggal)
+_DATE_SUFFIX = re.compile(r"\s+Date\s+(?P<a>\d{8})(?:-(?P<b>\d{8}))?$", re.I)
 
 
 def group_from_filename(zip_name):
     stem = Path(zip_name).stem
     m = _NAME.match(stem)
-    return (m["g"] if m else stem).strip()
+    name = (m["g"] if m else stem).strip()
+    return _DATE_SUFFIX.sub("", name).strip()
+
+
+def date_range_from_filename(zip_name):
+    """('20261006', '20261029') dari akhiran 'Date ...'; None bila tidak ada."""
+    m = _DATE_SUFFIX.search(Path(zip_name).stem)
+    return (m["a"], m["b"] or m["a"]) if m else None
 
 
 def sha256_file(path):
@@ -63,6 +72,21 @@ def count_kinds(names):
     return c
 
 
+def load_processed(path):
+    """Baca processed.json; file belum ada atau rusak = daftar kosong."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return {"sha256": list(data.get("sha256", [])), "drive_ids": list(data.get("drive_ids", []))}
+
+
+def save_processed(path, processed):
+    Path(path).write_text(json.dumps(processed, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def ingest(zip_path, cfg, processed, drive_id=None, root=None, log=None, now=None):
     """Proses satu ZIP. processed = {'sha256': [...], 'drive_ids': [...]} (diubah di tempat).
     Kembalikan manifest, atau None bila dilewati/gagal."""
@@ -85,7 +109,7 @@ def ingest(zip_path, cfg, processed, drive_id=None, root=None, log=None, now=Non
         log.warn(f"{zip_path.name}: {e}")
         return None
     manifest = {"sc": sc, "group": group, "drive_id": drive_id, "sha256": digest,
-                "zip": zip_path.name, "counts": count_kinds(names)}
+                "zip": zip_path.name, "date_range": date_range_from_filename(zip_path.name), "counts": count_kinds(names)}
     (dest / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     processed["sha256"].append(digest)
     if drive_id:

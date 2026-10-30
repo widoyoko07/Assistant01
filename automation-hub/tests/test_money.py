@@ -11,8 +11,11 @@ AMOUNTS = [
     ("gaji 5jt", 5_000_000), ("+2,5jt transfer", 2_500_000), ("parkir 5k", 5_000),
     ("tol 1.5k", 1_500), ("makan 25.500", 25_500), ("RP75000", 75_000), ("1.500 rb", 1_500_000),
     ("wifi 350RB", 350_000), ("10jt", 10_000_000),
+    ("Rp 50.000,-", 50_000), ("bensin 50 rb", 50_000), ("1,2jt", 1_200_000), ("0,5jt", 500_000),
+    ("+1jt bonus", 1_000_000), ("transfer masuk 750.000", 750_000), ("beli 3 galon 60rb", 60_000),
+    ("2.5jt", 2_500_000), ("pulsa 100.000 rupiah", 100_000), ("tgl 15 listrik 350rb", 350_000),
 ]
-NONE = ["beli galon", "2 botol", "1,5", "50kg beras", "abc"]
+NONE = ["beli galon", "2 botol", "1,5", "50kg beras", "abc", "makan siang 35k kopi 15k"]
 
 
 class AmountTest(unittest.TestCase):
@@ -20,6 +23,12 @@ class AmountTest(unittest.TestCase):
         for text, want in AMOUNTS:
             with self.subTest(text=text):
                 self.assertEqual(parse_amount(text), want)
+
+    def test_sample_count(self):
+        self.assertGreaterEqual(len(AMOUNTS) + len(NONE), 30)
+
+    def test_same_amount_twice_is_not_ambiguous(self):
+        self.assertEqual(parse_amount("kopi 15k teh 15k"), 15_000)
 
     def test_unparseable_is_none_not_guess(self):
         for text in NONE:
