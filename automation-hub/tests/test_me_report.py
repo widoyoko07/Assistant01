@@ -129,5 +129,11 @@ class WorkDescriptionSourcesTest(unittest.TestCase):
         self.assertEqual(rows[0]["work_description"], "1. Fabrikasi\nworkshop\n- fabrication conduit")
 
 
+class BcpWdRuleTest(unittest.TestCase):
+    def test_activity_section_only(self):
+        txt = "Daily report Safety Toolbox Meeting\nArea kerja :\n- ERS\n\nAktifitas kerja :\n- Pemasangan A\n- Pemasangan B\n\nUpdate pekerja :\n13 orang\n"
+        self.assertEqual(R.posting_items(txt, CFG["wd"]["BCP"]), ["- Pemasangan A", "- Pemasangan B"])
+
+
 if __name__ == "__main__":
     unittest.main()

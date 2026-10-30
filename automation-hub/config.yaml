@@ -5,6 +5,7 @@ groups:            # nama grup WA persis seperti di nama file ZIP -> kode SC
   "OWJJ-WKP SS for Other Crane": WKP
   "OWJJ-TPE Mechanical Work": TPE
   "OWJJ-WME Pipe Gallery&LPS": WME
+  "OWJJ - BCP(Engineering)": BCP
 sc_aliases:        # penulisan nama SC di pesan WA grup ME (huruf kecil) -> kode SC
   silog: SILOG
   tohoma: TODJO
@@ -47,12 +48,16 @@ tbm:               # pengenal pesan Posting TBM per SC di grup WA SC (hanya SC y
   TODJO:                                  # grup hanya mengirim workplan (tanpa blok Man Power); ejaan 'workplant/workpalne/...' bervariasi
     header_re: "work\\s*p(?:la|al)n"
     date: text                            # sering dikirim terlambat; pakai tanggal di teks
+  BCP:                                    # grup engineering BCP: pesan 'Daily (report) Safety Toolbox Meeting' / 'SMT all'
+    header_re: "daily\\s+(?:report\\s+)?(?:safety\\s+toolbox|smt)"
+    end: "^Terima kasih"
 wd:                # bagian rencana kerja di Posting.txt per SC (untuk Work Description DPR)
   SILOG: {start: "^WORK DESCRIPTION"}
   WME: {start: "^PLAN"}
   DHJ: {start: "^Plan"}
   TPE: {start: "^headwork", keep_start: true, stop: "^Total staff"}
   TODJO: {skip_first: 1}
+  BCP: {start: "^Akti\\w+(?:\\s+(?:kerja|team))?\\s*:", stop: "^Update\\s+(?:personil|pekerja|man\\s*power)"}
   # WKP tidak punya rencana kerja di Posting -> hanya dari grup ME
 drive:             # folder Google Drive
   subcon_inbox: "WA Export/Subcon"

@@ -69,7 +69,7 @@ class RealConfigRulesTest(unittest.TestCase):
         cls.rules = cfgmod.load()["tbm"]
 
     def test_all_verified_sc_have_rules(self):
-        self.assertEqual(set(self.rules), {"SILOG", "WME", "TPE", "DHJ", "WKP", "TODJO"})
+        self.assertEqual(set(self.rules), {"SILOG", "WME", "TPE", "DHJ", "WKP", "TODJO", "BCP"})
 
     def test_tpe_today_kept_tomorrow_skipped_weather_cut(self):
         r = self.rules["TPE"]
@@ -77,6 +77,13 @@ class RealConfigRulesTest(unittest.TestCase):
         self.assertTrue(T.is_posting(m("2026-10-26T09:00:00", today), r))
         self.assertFalse(T.is_posting(m("2026-10-26T13:00:00", "<document omitted> Work Planning tomorrow \n27 October 2026 PT. TIGA PILAR ENERGI\n1. A"), r))
         self.assertTrue(T.posting_text(m("2026-10-26T09:00:00", today), r).endswith("Total All: 1 Person\n"))
+
+    def test_bcp_safety_toolbox_post_cut_before_thanks(self):
+        txt = "Daily report Safety Toolbox Meeting\nInternal team BCP\nJumat,30-10-2026\n\nAktifitas kerja :\n- Pemasangan X\n\nUpdate pekerja :\n13 orang\n\nTerima kasih\nSalam K3"
+        r = self.rules["BCP"]
+        self.assertTrue(T.is_posting(m("2026-10-30T08:57:00", txt), r))
+        self.assertFalse(T.is_posting(m("2026-10-30T09:00:00", "Koordinasi meeting HSE"), r))
+        self.assertTrue(T.posting_text(m("2026-10-30T08:57:00", txt), r).endswith("13 orang\n"))
 
     def test_dhj_cut_before_kondisi(self):
         txt = "<image omitted> DAILY REPORT\nPT. DUTA HITA JAYA\nTotal manpower = 1 orang\n\nKondisi lokasi : Baik\nCuaca : Cerah"
