@@ -3,12 +3,17 @@
 Penanda subcon tidak seragam ("24/10/26 TPE", "Silog - 24 Oct 2026", "TOHOMA Activity ..."),
 jadi nama dicocokkan lewat config.sc_aliases. Satu pesan boleh memuat beberapa subcon.
 """
+import csv
 import re
 from datetime import datetime
+
+from ..common import config as cfgmod
+from ..common.runlog import RunLog
 
 _OT = re.compile(r"\b(?:overtime|ot)\b", re.I)
 _WORD = re.compile(r"[a-z]+")
 _BULLET = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s*")
+_LABEL = re.compile(r"activity\s*:?$")  # baris label 'Activity:' tanpa isi
 MAX_HEADER_WORDS = 10
 
 
@@ -37,6 +42,8 @@ def split_message(msg, aliases):
             cur = {"date": date, "sc": scs[0] if len(scs) == 1 else None, "candidates": scs,
                    "ot": ot_seen, "lines": [], "msg_id": msg["id"]}
             sections.append(cur)
+        elif is_ot and len(_WORD.findall(line.lower())) <= 2:
+            cur = None  # judul 'Overtime 29/10/2026' tanpa nama SC: bukan isi section sebelumnya
         elif cur is not None and line.strip():
             cur["lines"].append(line.strip())
     return sections
@@ -78,8 +85,29 @@ def work_description(parts, sc, date):
             continue
         for line in p["lines"]:
             key = _BULLET.sub("", line).strip().lower()
-            if not key or re.match(r"mp\s*:", key) or key in seen:
+            if not key or re.match(r"mp\s*:", key) or _LABEL.match(key) or key in seen:
                 continue
             seen.add(key)
             out.append(line)
     return out
+
+
+def write_csv(messages, cfg, root=None, log=None):
+    """Draf narasi ME: satu baris per (tanggal, SC) ke data/03_me/narasi_<dari>_<sampai>.csv.
+    Kolom jam sudah mengikuti aturan OT (21.00 / 12 jam). Draf ini untuk dicek manual sebelum masuk DPR."""
+    log = log or RunLog("me_report", root=root)
+    parts, daily = collect(messages, cfg, log)
+    if not daily:
+        log.warn("tidak ada laporan ME ditemukan")
+        return None
+    out_dir = cfgmod.data_dir(root=root) / "03_me"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"narasi_{daily[0]['date'].replace('-', '')}_{daily[-1]['date'].replace('-', '')}.csv"
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "sc", "overtime", "start", "finish", "total_hours", "work_description"])
+        for r in daily:
+            w.writerow([r["date"], r["sc"], "Y" if r["ot"] else "", r["start"], r["finish"], r["total"],
+                        "\n".join(work_description(parts, r["sc"], r["date"]))])
+    log.done(path.name)
+    return path

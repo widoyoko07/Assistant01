@@ -71,6 +71,27 @@ class HoursTest(unittest.TestCase):
                          ["- Install conduit", "- Termination cable"])
         self.assertEqual(R.work_description(parts, "TPE", "2026-10-27"), [])
 
+    def test_repeated_overtime_title_not_appended_to_previous_section(self):
+        m = msg("2026-10-29T20:52:36", "Overtime 29/10/2026\nDwijo - ATRN\nMP: 10 person\n- Boring\n\nOvertime 29/10/2026\nWME - LPS\n- Filling")
+        s = R.split_message(m, AL)
+        self.assertEqual(s[0]["lines"], ["MP: 10 person", "- Boring"])
+        self.assertEqual([x["sc"] for x in s], ["TODJO", "WME"])
+
+    def test_label_only_lines_dropped_and_csv_written(self):
+        import csv, tempfile
+        from pathlib import Path
+        cfg = {"sc_aliases": AL, "dpr": {"hours": {"normal": {"start": "08.00", "finish": "17.00", "total": 8},
+                                                  "overtime": {"start": "08.00", "finish": "21.00", "total": 12}}}}
+        ms = [msg("2026-10-26T10:00:00", "TOHOMA\n- Install pipe", 1),
+              msg("2026-10-26T21:56:17", "Overtime 26 Oct\nTOHOMA\nActivity:\n- Filling water", 2)]
+        with tempfile.TemporaryDirectory() as t:
+            p = R.write_csv(ms, cfg, root=Path(t))
+            with open(p, encoding="utf-8-sig") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["overtime"], rows[0]["finish"], rows[0]["total_hours"]), ("Y", "21.00", "12"))
+        self.assertEqual(rows[0]["work_description"], "- Install pipe\n- Filling water")
+
 
 if __name__ == "__main__":
     unittest.main()
