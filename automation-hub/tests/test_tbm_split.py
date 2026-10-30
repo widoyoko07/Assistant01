@@ -69,7 +69,7 @@ class RealConfigRulesTest(unittest.TestCase):
         cls.rules = cfgmod.load()["tbm"]
 
     def test_all_verified_sc_have_rules(self):
-        self.assertEqual(set(self.rules), {"SILOG", "WME", "TPE", "DHJ", "WKP"})
+        self.assertEqual(set(self.rules), {"SILOG", "WME", "TPE", "DHJ", "WKP", "TODJO"})
 
     def test_tpe_today_kept_tomorrow_skipped_weather_cut(self):
         r = self.rules["TPE"]
@@ -86,3 +86,26 @@ class RealConfigRulesTest(unittest.TestCase):
     def test_wkp_cut_before_activity_hse(self):
         txt = "HSE DAILY REPORT PT. WKP \nTotal mp: 37 persons \n\nActivity HSE\nHSE Concern :"
         self.assertEqual(T.posting_text(m("2026-10-27T09:00:00", txt), self.rules["WKP"]), "HSE DAILY REPORT PT. WKP \nTotal mp: 37 persons\n")
+
+    def test_todjo_workplan_spellings_and_text_date(self):
+        r = self.rules["TODJO"]
+        for spell in ("workplant", "workpalne", "workpalnt", "Workplann", "workplan"):
+            self.assertTrue(T.is_posting(m("2026-10-28T15:27:51", f"<image omitted> Thursday 27-10-2026 {spell}\nWASEFLOW"), r), spell)
+        self.assertFalse(T.is_posting(m("2026-10-09T14:53:22", "ROAD CLOSURE NOTIFICATION\nDear all"), r))
+        late = m("2026-10-28T15:27:51", "Thursday 27-10-2026 workpalnt\nWASEFLOW")
+        self.assertIn("2026-10-27", T.pick_postings([late], r))
+
+    def test_text_date_formats(self):
+        self.assertEqual(T.text_date("Selasa, 27 Okt 2026"), "2026-10-27")
+        self.assertEqual(T.text_date("Rabu 28Oktober 2026"), "2026-10-28")
+        self.assertEqual(T.text_date("Workplann : 14-October-2026"), "2026-10-14")
+        self.assertEqual(T.text_date("Monday 12 -10-2026 workpalne"), "2026-10-12")
+        self.assertIsNone(T.text_date("ZONE 1 PLUIT JAKARTA"))
+
+    def test_typo_date_warns_and_uses_sent_date(self):
+        with tempfile.TemporaryDirectory() as t:
+            log = RunLog("t", root=Path(t))
+            got = T.pick_postings([m("2026-10-28T10:38:22", "DAILY REPORT\nRABU, 26 OKTOBER 2026\nPT. DUTA HITA JAYA")], self.rules["DHJ"], log)
+            self.assertEqual(list(got), ["2026-10-28"])
+            self.assertEqual(len(log.warnings), 1)
+            log.summary()

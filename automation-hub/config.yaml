@@ -44,6 +44,9 @@ tbm:               # pengenal pesan Posting TBM per SC di grup WA SC (hanya SC y
   WKP:
     header: "HSE DAILY REPORT PT. WKP"
     end: "^Activity HSE"
+  TODJO:                                  # grup hanya mengirim workplan (tanpa blok Man Power); ejaan 'workplant/workpalne/...' bervariasi
+    header_re: "work\\s*p(?:la|al)n"
+    date: text                            # sering dikirim terlambat; pakai tanggal di teks
 drive:             # folder Google Drive
   subcon_inbox: "WA Export/Subcon"
   dagang_inbox: "WA Export/Dagangan"

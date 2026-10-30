@@ -4,7 +4,7 @@ Persis format yang dibaca Daily MP v10. Pengenal pesan per SC ada di config.tbm;
 dikonfigurasi dilaporkan, bukan ditebak.
 """
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from ..common import config as cfgmod
 from ..common.runlog import RunLog
@@ -25,11 +25,34 @@ def posting_text(msg, rule):
     return "\n".join(lines).rstrip() + "\n"
 
 
+_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "mei": 5, "may": 5, "jun": 6, "jul": 7, "agu": 8, "aug": 8,
+    "sep": 9, "okt": 10, "oct": 10, "nov": 11, "des": 12, "dec": 12,
+}
+_TEXT_DATE = re.compile(r"(\d{1,2})\s*[-/ ]?\s*(\d{1,2}|[A-Za-z]{3,9})\s*[-/ ]?\s*(\d{4})")
+
+
+def text_date(text):
+    """Tanggal yang ditulis di teks pesan ('27 Okt 2026', '28-10-2026', '14-October-2026'); None bila tidak ada."""
+    for d, mo, y in _TEXT_DATE.findall(text):
+        mo = int(mo) if mo.isdigit() else _MONTHS.get(mo[:3].lower())
+        try:
+            return date(int(y), mo, int(d)).isoformat()
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def is_posting(msg, rule):
-    text = msg["text"].upper()
-    if msg.get("system") or rule["header"].upper() not in text:
+    text = msg["text"]
+    if msg.get("system"):
         return False
-    return not (rule.get("skip") and rule["skip"].upper() in text)
+    if rule.get("header_re"):
+        if not re.search(rule["header_re"], text, re.I):
+            return False
+    elif rule["header"].upper() not in text.upper():
+        return False
+    return not (rule.get("skip") and rule["skip"].upper() in text.upper())
 
 
 def pick_postings(messages, rule, log=None):
@@ -38,7 +61,14 @@ def pick_postings(messages, rule, log=None):
     for m in messages:
         if not is_posting(m, rule):
             continue
-        d = datetime.fromisoformat(m["ts"]).date().isoformat()
+        sent = datetime.fromisoformat(m["ts"]).date().isoformat()
+        written = text_date(m["text"])
+        if rule.get("date") == "text" and written:
+            d = written  # SC yang sering kirim terlambat: tanggal di teks lebih benar daripada waktu kirim
+        else:
+            d = sent
+            if written and written != sent and log:
+                log.warn(f"{sent}: teks bertanggal {written} (salah ketik?), dipakai tanggal kirim")
         if d in by_date and log:
             log.warn(f"{d}: lebih dari satu posting, dipakai yang terakhir (revisi)")
         by_date[d] = m
