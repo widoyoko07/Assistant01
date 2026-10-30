@@ -79,3 +79,20 @@ dpr:
 categories:        # kamus kata kunci K2 -> kategori
   Rumah Tangga: [listrik, pdam, wifi, galon]
   Transportasi: [bensin, tol, parkir]
+me_sheet:          # sheet ME di Subcontractor MP.xlsx: satu blok per SC (nama di kolom B), satu baris per role (kolom D)
+  sheet: ME
+  first_row: 313
+  last_row: 552
+  date_row: 4        # baris tanggal; kolom E = base_date, tiap kolom berikutnya +1 hari
+  base_date: "2024-08-01"
+  base_col: 5
+  blocks:          # kode SC di Daily MP -> nama blok di kolom B. TODJO tidak ada: blok 'Tohoma' dan 'DJK DCIP' butuh pemisahan per perusahaan
+    DHJ: DHJ
+    WKP: WKP
+    TPE: TPE
+    WME: WME
+    SILOG: SILOG
+    DJK: DJK
+    BCP: BCP
+  role_alias:      # penulisan role di Daily MP -> penulisan di sheet
+    Common Labor: Commoun Labor

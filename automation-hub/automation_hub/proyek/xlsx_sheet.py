@@ -5,6 +5,7 @@ file besar. Di sini hanya empat bagian zip yang disentuh; semua bagian lain disa
 """
 import re
 import zipfile
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 _NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -81,3 +82,83 @@ def add_sheet(src, dst, name, rows, widths=()):
                     data = ct.encode("utf-8")
                 zout.writestr(info, data)
             zout.writestr(f"xl/{part}", sheet_xml(rows, widths))
+
+
+class OverwriteError(Exception):
+    """Penulisan ditolak karena sel tujuan sudah berisi."""
+
+
+def _split_ref(ref):
+    m = re.fullmatch(r"([A-Z]+)(\d+)", ref)
+    return m.group(1), int(m.group(2))
+
+
+def _col_num(letters):
+    n = 0
+    for ch in letters:
+        n = n * 26 + ord(ch) - 64
+    return n
+
+
+def _sheet_part(zin, sheet_name):
+    wb = zin.read("xl/workbook.xml").decode("utf-8")
+    rels = zin.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+    m = re.search(rf'<sheet\b[^>]*\bname="{re.escape(escape(sheet_name))}"[^>]*?(?:\w+:)?id="(rId\d+)"', wb)
+    if not m:
+        raise ValueError(f"sheet {sheet_name!r} tidak ada")
+    t = re.search(rf'<Relationship\b[^>]*\bId="{m.group(1)}"[^>]*\bTarget="([^"]+)"', rels) or \
+        re.search(rf'<Relationship\b[^>]*\bTarget="([^"]+)"[^>]*\bId="{m.group(1)}"', rels)
+    target = t.group(1)
+    return target.lstrip("/") if target.startswith("/") else "xl/" + target
+
+
+def fill_empty_cells(src, dst, sheet_name, cells):
+    """SATU-SATUNYA jalur penulisan angka ke sel sheet yang sudah ada: hanya mengisi sel KOSONG.
+    cells: {"AEQ316": 3, ...}. Sel yang sudah berisi (nilai, rumus, teks) -> OverwriteError dan tidak ada yang ditulis.
+    src tidak pernah diubah; dst harus file lain."""
+    from lxml import etree
+    src, dst = Path(src), Path(dst)
+    if src.resolve() == dst.resolve():
+        raise ValueError("dst harus berbeda dari src (file sumber tidak boleh ditimpa)")
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    q = lambda t: f"{{{ns}}}{t}"
+    with zipfile.ZipFile(src) as zin:
+        part = _sheet_part(zin, sheet_name)
+        root = etree.fromstring(zin.read(part))
+        data = root.find(q("sheetData"))
+        rows = {int(r.get("r")): r for r in data.findall(q("row"))}
+        busy = []
+        for ref, val in cells.items():
+            col, rn = _split_ref(ref)
+            row = rows.get(rn)
+            c = next((x for x in row.findall(q("c")) if x.get("r") == ref), None) if row is not None else None
+            if c is not None and (c.find(q("v")) is not None or c.find(q("f")) is not None or c.find(q("is")) is not None):
+                busy.append(ref)
+        if busy:
+            raise OverwriteError(f"{len(busy)} sel sudah berisi, tidak ditimpa: {', '.join(sorted(busy)[:10])}")
+        for ref, val in cells.items():
+            if isinstance(val, bool) or not isinstance(val, (int, float)):
+                raise ValueError(f"{ref}: hanya angka yang boleh ditulis, dapat {val!r}")
+            col, rn = _split_ref(ref)
+            row = rows.get(rn)
+            if row is None:
+                row = etree.Element(q("row"), r=str(rn))
+                after = max((k for k in rows if k < rn), default=None)
+                if after is None:
+                    data.insert(0, row)
+                else:
+                    rows[after].addnext(row)
+                rows[rn] = row
+            c = next((x for x in row.findall(q("c")) if x.get("r") == ref), None)
+            if c is None:
+                c = etree.Element(q("c"), r=ref)
+                prev = [x for x in row.findall(q("c")) if _col_num(_split_ref(x.get("r"))[0]) < _col_num(col)]
+                if prev:
+                    prev[-1].addnext(c)
+                else:
+                    row.insert(0, c)
+            etree.SubElement(c, q("v")).text = str(val)
+        new_xml = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+        with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info in zin.infolist():
+                zout.writestr(info, new_xml if info.filename == part else zin.read(info.filename))
