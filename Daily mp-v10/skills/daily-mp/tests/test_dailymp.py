@@ -171,6 +171,25 @@ class RencanaKerjaBukanOrang(unittest.TestCase):
         self.assertEqual(M.numbering_warnings(self.TPE), [])
 
 
+class BcpTotalOnly(unittest.TestCase):
+    def test_update_pekerja_total(self):
+        sm = M.parse_summary("Daily report Safety Toolbox Meeting\nAktifitas kerja :\n- X\n\nUpdate pekerja :\n13 orang\n")
+        self.assertEqual(sm, {"indirect": None, "direct": None, "total": 13})
+
+    def test_update_man_power_same_line(self):
+        self.assertEqual(M.parse_summary("Update man power : 14 orang")["total"], 14)
+
+
+class BcpTotalRow(unittest.TestCase):
+    def test_total_only_report_counts_in_table(self):
+        with tempfile.TemporaryDirectory() as t:
+            open(os.path.join(t, "BCP TBM 20261030 Posting.txt"), "w").write("Aktifitas kerja :\n- X\n\nUpdate pekerja :\n13 orang\n")
+            table, notes, _ = M.build(M.load_dir(t), "2026-10-30", False)
+        row = [v for _, p, v in table if p == M.SUM_TOTAL_ROW[1]][0]
+        self.assertEqual(row[M.SUBS.index("BCP")], 13)
+        self.assertTrue(M.has_data(table))
+
+
 class JsonOutput(unittest.TestCase):
     def _run(self, *extra):
         with tempfile.TemporaryDirectory() as t:

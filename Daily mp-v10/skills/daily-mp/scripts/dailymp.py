@@ -33,6 +33,7 @@ POS = [p for _, p in ROWS]
 EXTRA = ["Land 1", "Land 2"]   # baris tambahan khusus DJK, hanya muncul bila ada isinya
 SC_MAP = {}; CUR = [None]
 TYPE_OF = {p: t for t, p in ROWS}
+SUM_TOTAL_ROW = ("", "Total (tanpa rincian Indirect/Direct)")   # laporan yang hanya menulis total, mis. BCP
 SUM_ROWS = [("Indirect", "Indirect (tanpa rincian posisi)"), ("Direct", "Direct (tanpa rincian posisi)")]
 
 ROLE_MAP = {
@@ -218,11 +219,16 @@ def parse_summary(text):
     t = clean(text); out = {}
     for key, pat in (("indirect", r"indirect\s*[=:]\s*(\d+)"), ("direct", r"(?<!in)direct\s*[=:]\s*(\d+)"),
                      ("staff", r"staf+\s*[:=]\s*(\d+)"), ("worker", r"worker\s*[:=]\s*(\d+)"),
-                     ("total", r"total\s*(?:mp|manpower)\s*[:=]?\s*(\d+)")):
+                     ("total", r"(?:total\s*(?:mp|manpower)\s*[:=]?|update\s+(?:pekerja|personil|man\s*power)\s*:?\s*)(\d+)")):
         m = re.search(pat, t, re.I)
         if m: out[key] = int(m.group(1))
     ind = out.get("indirect", out.get("staff")); dr = out.get("direct", out.get("worker"))
-    return {"indirect": ind, "direct": dr, "total": out.get("total")} if (ind is not None or dr is not None) else None
+    return {"indirect": ind, "direct": dr, "total": out.get("total")} if (ind is not None or dr is not None or "total" in out) else None
+
+def _sm_txt(sm):
+    parts = [f"{k} {sm[v]}" for k, v in (("Indirect", "indirect"), ("Direct", "direct")) if sm[v] is not None]
+    if sm["total"]: parts.append(f"Total {sm['total']}")
+    return ", ".join(parts)
 
 def parse_djk(text):
     days = {}
@@ -346,7 +352,7 @@ def load_dir(folder):
         if not text.strip():
             res[sub][d] = {"status": "empty", "file": os.path.basename(f)}; continue
         WARN[(sub, d)] = check_header(text, d) + (numbering_warnings(text) if sub not in ("DHJ", "TODJO", "WME", "WKP") else [])
-        if sub in ("WME", "WKP"):
+        if sub in ("WME", "WKP", "BCP"):
             s = parse_summary(text)
             res[sub][d] = {"status": "summary", "summary": s, "file": os.path.basename(f)} if s else \
                           {"status": "unknown", "file": os.path.basename(f)}
@@ -376,7 +382,7 @@ def pdf_source(s, d, r):
     n = [f"**{s}**: {len(people)} orang dari PDF Attendance (roster; tanda tangan tidak terbaca, jadi ini batas atas kehadiran)"]
     if r and r["status"] == "summary":
         sm = r["summary"]; tot = sm["total"] or (sm["indirect"] or 0) + (sm["direct"] or 0)
-        n.append(f"Posting: Indirect {sm['indirect']}, Direct {sm['direct']}, Total {tot} | PDF: Indirect {tp['Indirect']}, Direct {tp['Direct']}, Total {len(people)} (selisih total {len(people) - tot:+d})")
+        n.append(f"Posting: {_sm_txt(sm) if sm['total'] else _sm_txt(sm) + f', Total {tot}'} | PDF: Indirect {tp['Indirect']}, Direct {tp['Direct']}, Total {len(people)} (selisih total {len(people) - tot:+d})")
     else: n.append("Posting tidak ada/tanpa total, jumlah tidak bisa dicek")
     return counts, [" | ".join(n)] + [f"⚠ **{s}**: {x}" for x in WARN.get((s, d), [])], newr
 
@@ -408,9 +414,8 @@ def build(res, d, detail):
             sm = r["summary"]; cols[s] = ("summary", sm)
             prev = sorted(x for x in res[s] if x < d)
             if prev and res[s][prev[-1]].get("summary") == sm:
-                notes.append(f"⚠ **{s}**: total sama persis dengan {prev[-1]} (Indirect {sm['indirect']}, Direct {sm['direct']}), kemungkinan salinan hari sebelumnya.")
-            notes.append(f"**{s}**: laporan hanya berisi total (Indirect {sm['indirect']}, Direct {sm['direct']}"
-                         f"{', Total ' + str(sm['total']) if sm['total'] else ''}), tanpa rincian posisi. Ditaruh di baris 'tanpa rincian posisi'.")
+                notes.append(f"⚠ **{s}**: total sama persis dengan {prev[-1]} ({_sm_txt(sm)}), kemungkinan salinan hari sebelumnya.")
+            notes.append(f"**{s}**: laporan hanya berisi total ({_sm_txt(sm)}), tanpa rincian posisi. Ditaruh di baris 'tanpa rincian posisi'.")
             continue
         people, removed, warns = dedupe(r["people"])
         counts = {}
@@ -436,6 +441,7 @@ def build(res, d, detail):
             notes.append(f"  Rincian {s}: " + "; ".join(f"{k} ({len(v)}): {', '.join(v)}" for k, v in det.items()))
     rows_def = list(ROWS)
     if any(k == "summary" for k, _ in cols.values()): rows_def += SUM_ROWS
+    if any(k == "summary" and d["indirect"] is None and d["direct"] is None for k, d in cols.values()): rows_def.append(SUM_TOTAL_ROW)
     for e in EXTRA:
         if any(k == "ok" and e in d for k, d in cols.values()): rows_def.append(("", e))
     for nr_label in newroles: rows_def.append(("", nr_label))
@@ -445,6 +451,8 @@ def build(res, d, detail):
         for s in SUBS:
             kind, data = cols[s]
             if kind == "missing": vals.append("n/a")
+            elif kind == "summary" and p == SUM_TOTAL_ROW[1]:
+                vals.append(data["total"] if data["indirect"] is None and data["direct"] is None else "-")
             elif kind == "summary":
                 vals.append(data["indirect"] if p == SUM_ROWS[0][1] and data["indirect"] is not None else
                             data["direct"] if p == SUM_ROWS[1][1] and data["direct"] is not None else "-")
