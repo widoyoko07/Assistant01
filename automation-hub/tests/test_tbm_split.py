@@ -58,3 +58,31 @@ class WriteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RealConfigRulesTest(unittest.TestCase):
+    """Aturan di config.yaml untuk SC yang sudah diverifikasi terhadap Posting.txt asli (data sintetis di sini)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from automation_hub.common import config as cfgmod
+        cls.rules = cfgmod.load()["tbm"]
+
+    def test_all_verified_sc_have_rules(self):
+        self.assertEqual(set(self.rules), {"SILOG", "WME", "TPE", "DHJ", "WKP"})
+
+    def test_tpe_today_kept_tomorrow_skipped_weather_cut(self):
+        r = self.rules["TPE"]
+        today = "Work Planning Today\n26 October 2026 PT. TIGA PILAR ENERGI\n1. A\nTotal All: 1 Person\n\nWeather Condition: sunny\nThankyou."
+        self.assertTrue(T.is_posting(m("2026-10-26T09:00:00", today), r))
+        self.assertFalse(T.is_posting(m("2026-10-26T13:00:00", "<document omitted> Work Planning tomorrow \n27 October 2026 PT. TIGA PILAR ENERGI\n1. A"), r))
+        self.assertTrue(T.posting_text(m("2026-10-26T09:00:00", today), r).endswith("Total All: 1 Person\n"))
+
+    def test_dhj_cut_before_kondisi(self):
+        txt = "<image omitted> DAILY REPORT\nPT. DUTA HITA JAYA\nTotal manpower = 1 orang\n\nKondisi lokasi : Baik\nCuaca : Cerah"
+        self.assertEqual(T.posting_text(m("2026-10-26T10:00:00", txt), self.rules["DHJ"]),
+                         "DAILY REPORT\nPT. DUTA HITA JAYA\nTotal manpower = 1 orang\n")
+
+    def test_wkp_cut_before_activity_hse(self):
+        txt = "HSE DAILY REPORT PT. WKP \nTotal mp: 37 persons \n\nActivity HSE\nHSE Concern :"
+        self.assertEqual(T.posting_text(m("2026-10-27T09:00:00", txt), self.rules["WKP"]), "HSE DAILY REPORT PT. WKP \nTotal mp: 37 persons\n")

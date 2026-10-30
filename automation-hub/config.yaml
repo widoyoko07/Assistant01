@@ -34,6 +34,16 @@ tbm:               # pengenal pesan Posting TBM per SC di grup WA SC (hanya SC y
   WME:
     header: "WASA MITRA ENGINEERING"
     end: "^Loc\\. Coordination"
+  TPE:
+    header: "TIGA PILAR ENERGI"
+    skip: "Work Planning tomorrow"       # 'tomorrow' = rencana besok, bukan Posting hari ini
+    end: "^Weather Condition"
+  DHJ:
+    header: "DUTA HITA JAYA"
+    end: "^Kondisi lokasi"
+  WKP:
+    header: "HSE DAILY REPORT PT. WKP"
+    end: "^Activity HSE"
 drive:             # folder Google Drive
   subcon_inbox: "WA Export/Subcon"
   dagang_inbox: "WA Export/Dagangan"
