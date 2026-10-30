@@ -148,10 +148,9 @@ def posting_files(root=None):
     return found
 
 
-def write_csv(messages, cfg, root=None, log=None):
-    """Draf Work Description ME: satu baris per (tanggal, SC) ke data/03_me/narasi_<dari>_<sampai>.csv.
-    Butir kerja = rencana kerja di Posting SC (config.wd) + narasi grup ME (laporan harian & lembur).
-    Jam mengikuti aturan OT (21.00 / 12 jam). Draf ini dicek manual sebelum masuk DPR."""
+def wd_rows(messages, cfg, root=None, log=None):
+    """Butir Work Description per (tanggal, SC), terurut: [(rec, [(butir, 'SC'|'ME')])].
+    Butir kerja = rencana kerja di Posting SC (config.wd) + narasi grup ME (laporan harian & lembur)."""
     log = log or RunLog("me_report", root=root)
     parts, daily = collect(messages, cfg, log)
     recs = {(r["date"], r["sc"]): r for r in daily}
@@ -160,25 +159,58 @@ def write_csv(messages, cfg, root=None, log=None):
         if key not in recs:
             recs[key] = {"date": key[0], "sc": key[1], "ot": False}
             recs[key]["start"], recs[key]["finish"], recs[key]["total"] = dpr_hours(False, cfg)
-    if not recs:
+    wd_rules = cfg.get("wd", {})
+    out = []
+    for r in sorted(recs.values(), key=lambda r: (r["date"], r["sc"])):
+        sc_items = posting_items(postings.get((r["date"], r["sc"]), ""), wd_rules.get(r["sc"]))
+        me_items = work_description(parts, r["sc"], r["date"])
+        merged = [(l, "SC" if k == 0 else "ME") for l, k in merge_items(sc_items, me_items)]
+        if not merged:
+            log.warn(f"{r['date']} {r['sc']}: tidak ada butir kerja (aturan wd untuk SC ini belum ada atau Posting kosong)")
+        out.append((r, merged))
+    if not out:
         log.warn("tidak ada laporan ME maupun Posting ditemukan")
+    return out
+
+
+WD_HEADER = ["Tanggal", "SC", "OT", "Start", "Finish", "Jam", "Sumber", "Butir"]
+
+
+def wd_table(rows):
+    """Satu baris per butir (mudah disaring dan disalin); baris pertama = judul kolom."""
+    table = [WD_HEADER]
+    for r, items in rows:
+        for line, src in items:
+            table.append([r["date"], r["sc"], "Y" if r["ot"] else "", r["start"], r["finish"], r["total"], src, line])
+    return table
+
+
+def write_sheet(messages, cfg, src_xlsx, dst_xlsx, root=None, log=None, name="WD Kandidat"):
+    """Tambah sheet kandidat Work Description ke salinan workbook Subcontractor MP (file asli tidak diubah)."""
+    from .xlsx_sheet import add_sheet
+    log = log or RunLog("me_report", root=root)
+    table = wd_table(wd_rows(messages, cfg, root, log))
+    add_sheet(src_xlsx, dst_xlsx, name, table, widths=(11, 8, 5, 8, 8, 6, 8, 90))
+    log.done(f"{dst_xlsx} ({len(table) - 1} butir)")
+    return dst_xlsx
+
+
+def write_csv(messages, cfg, root=None, log=None):
+    """Draf Work Description ME: satu baris per (tanggal, SC) ke data/03_me/narasi_<dari>_<sampai>.csv.
+    Jam mengikuti aturan OT (21.00 / 12 jam). Draf ini dicek manual sebelum masuk DPR."""
+    log = log or RunLog("me_report", root=root)
+    rows = wd_rows(messages, cfg, root, log)
+    if not rows:
         return None
-    rows = sorted(recs.values(), key=lambda r: (r["date"], r["sc"]))
     out_dir = cfgmod.data_dir(root=root) / "03_me"
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"narasi_{rows[0]['date'].replace('-', '')}_{rows[-1]['date'].replace('-', '')}.csv"
-    wd_rules = cfg.get("wd", {})
+    path = out_dir / f"narasi_{rows[0][0]['date'].replace('-', '')}_{rows[-1][0]['date'].replace('-', '')}.csv"
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["date", "sc", "overtime", "start", "finish", "total_hours", "sumber", "work_description"])
-        for r in rows:
-            sc_items = posting_items(postings.get((r["date"], r["sc"]), ""), wd_rules.get(r["sc"]))
-            me_items = work_description(parts, r["sc"], r["date"])
-            merged = merge_items(sc_items, me_items)
-            src = "+".join(n for n, k in (("SC", 0), ("ME", 1)) if any(x == k for _, x in merged))
-            if not merged:
-                log.warn(f"{r['date']} {r['sc']}: tidak ada butir kerja (aturan wd untuk SC ini belum ada atau Posting kosong)")
+        for r, items in rows:
+            src = "+".join(n for n in ("SC", "ME") if any(x == n for _, x in items))
             w.writerow([r["date"], r["sc"], "Y" if r["ot"] else "", r["start"], r["finish"], r["total"], src,
-                        "\n".join(l for l, _ in merged)])
+                        "\n".join(l for l, _ in items)])
     log.done(path.name)
     return path
