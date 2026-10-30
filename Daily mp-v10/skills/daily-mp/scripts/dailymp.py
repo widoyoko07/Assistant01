@@ -512,6 +512,17 @@ def to_xlsx(path, table, d, lines=()):
     for ln in lines: wn.append([ln])
     wb.save(path)
 
+def to_json(table, d, notes, newroles):
+    """Keluaran mesin untuk automation-hub (M5): angka per posisi per SC; 'n/a' = belum ada data, '-' = tidak dirinci."""
+    ct = col_totals(table)
+    return {
+        "date": d, "subs": list(SUBS),
+        "rows": [{"type": t, "posisi": p, "values": dict(zip(SUBS, v))} for t, p, v in table],
+        "totals": dict(zip(SUBS, ct)), "grand_total": sum(ct), "has_data": has_data(table),
+        "notes": [n.replace("**", "") for n in notes],
+        "role_baru": {k.replace(NEW, ""): {s: len(n) for s, n in v.items()} for k, v in newroles.items()},
+    }
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", required=True); ap.add_argument("--date")
@@ -521,6 +532,7 @@ if __name__ == "__main__":
     ap.add_argument("--compact", action="store_true", help="tabel ringkas untuk chat (tanpa kolom/baris kosong dan tanpa blok TSV)")
     ap.add_argument("--xc", action="store_true", help="cross-check dengan Attendance .txt (SILOG, TPE, DHJ)")
     ap.add_argument("--att-dir", help="folder file Attendance .txt (default: sama dengan --dir)")
+    ap.add_argument("--json", nargs="?", const="AUTO", help="tulis hasil sebagai JSON (mp_YYYYMMDD.json; '-' = stdout saja, tanpa tabel)")
     ap.add_argument("--dedup-threshold", type=float, default=0.85)
     ap.add_argument("--dedup-scope", choices=["section", "category"], default="section")
     a = ap.parse_args()
@@ -569,6 +581,13 @@ if __name__ == "__main__":
     d = a.date or (dates[-1] if dates else None)
     if not d: raise SystemExit("Tidak ada file data di folder.")
     table, notes, newroles = build(res, d, a.detail)
+    if a.json:
+        import json
+        blob = json.dumps(to_json(table, d, notes, newroles), ensure_ascii=False, indent=2)
+        if a.json == "-":
+            print(blob); raise SystemExit
+        jpath = a.json if a.json != "AUTO" else f"mp_{d.replace('-', '')}.json"
+        open(jpath, "w", encoding="utf-8").write(blob + "\n")
     print(md_compact(table, d, res) if a.compact else md(table, d)); print("\n**Catatan:**"); [print("- " + n) for n in notes]
     if newroles:
         print("\n**PERLU KONFIRMASI - role baru (belum ada di aturan), sementara ditaruh di baris sendiri:**")

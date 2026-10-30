@@ -158,4 +158,37 @@ class PDFExtraction(unittest.TestCase):
         self.assertIsNone(image)
         render.assert_not_called()
 
+class JsonOutput(unittest.TestCase):
+    def _run(self, *extra):
+        with tempfile.TemporaryDirectory() as t:
+            open(os.path.join(t, "WME_TBM_20261028_Posting.txt"), "w").close()  # nama file tidak penting: sub_of dipakai load_dir
+            return subprocess.run([sys.executable, os.path.join(os.path.dirname(M.__file__), "dailymp.py"), "--dir", t, *extra],
+                                  capture_output=True, text=True, cwd=t)
+
+    def test_to_json_structure_and_totals(self):
+        M.load_scmap()
+        table = [("Indirect", "Surveyor", [1, "n/a", 0, "-", 2, "-", "n/a", "n/a", "n/a"]),
+                 ("Direct", "Foreman", [3, "n/a", 0, "-", 0, "-", "n/a", "n/a", "n/a"])]
+        j = M.to_json(table, "2026-10-28", ["**SILOG**: 4 orang"], {M.NEW + "EAST": {"TPE": ["x"]}})
+        self.assertEqual(j["date"], "2026-10-28")
+        self.assertEqual(j["subs"], list(M.SUBS))
+        self.assertEqual(j["rows"][0], {"type": "Indirect", "posisi": "Surveyor", "values": dict(zip(M.SUBS, table[0][2]))})
+        self.assertEqual((j["totals"]["SILOG"], j["totals"]["TPE"], j["grand_total"]), (4, 2, 6))
+        self.assertEqual(j["notes"], ["SILOG: 4 orang"])
+        self.assertEqual(j["role_baru"], {"EAST": {"TPE": 1}})
+        self.assertTrue(j["has_data"])
+
+    def test_json_to_stdout_is_pure_json(self):
+        import json
+        r = self._run("--date", "2026-10-28", "--json", "-")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["date"], "2026-10-28")
+
+    def test_json_default_file_name(self):
+        with tempfile.TemporaryDirectory() as t:
+            r = subprocess.run([sys.executable, os.path.join(os.path.dirname(M.__file__), "dailymp.py"), "--dir", t, "--date", "2026-10-28", "--json"],
+                               capture_output=True, text=True, cwd=t)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue(os.path.exists(os.path.join(t, "mp_20261028.json")))
+
 if __name__ == "__main__": unittest.main()
