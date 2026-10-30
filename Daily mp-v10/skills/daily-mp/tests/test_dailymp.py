@@ -158,6 +158,19 @@ class PDFExtraction(unittest.TestCase):
         self.assertIsNone(image)
         render.assert_not_called()
 
+class RencanaKerjaBukanOrang(unittest.TestCase):
+    TPE = ("STAFF : 2 Person\n1. SM: Aa Bb\n2. SE: Cc Dd\n\nCREW : 2 Person\n1. Aa (FT)\n2. Bb (MW)\n\n"
+           "headwork\n1. Check stock\n2. Install frame\n\nRiser\n1. Unload material\n\n"
+           "Area : X\n1. Remove scaffold\n\nTotal All: 4 Person\n")
+
+    def test_headwork_dan_area_tidak_dihitung(self):
+        people, _ = M.parse_numbered(self.TPE)
+        self.assertEqual(len(people), 4)
+
+    def test_numbering_warnings_berhenti_di_headwork(self):
+        self.assertEqual(M.numbering_warnings(self.TPE), [])
+
+
 class JsonOutput(unittest.TestCase):
     def _run(self, *extra):
         with tempfile.TemporaryDirectory() as t:

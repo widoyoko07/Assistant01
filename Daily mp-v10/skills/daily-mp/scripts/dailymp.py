@@ -164,7 +164,7 @@ def parse_numbered(text):
         line = raw.strip()
         if not line: continue
         if re.match(r"(?i)^[-*•\s]*total\b", line): break
-        if re.match(r"(?i)^(area\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
+        if re.match(r"(?i)^(area\b|headwork\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
         item = re.match(r"^\d+\s*[.)]\s*(.*)$", line)
         if item:
             body = item.group(1).strip()
@@ -307,7 +307,7 @@ def numbering_warnings(text):
     sec, nums, blanks, w = "Manpower", {}, {}, []
     for raw in clean(text).splitlines():
         line = raw.strip()
-        if re.match(r"(?i)^[-*•\s]*total\b", line) or re.match(r"(?i)^(area\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
+        if re.match(r"(?i)^[-*•\s]*total\b", line) or re.match(r"(?i)^(area\b|headwork\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
         it = re.match(r"^(\d+)\s*[.)]\s*(.*)$", line)
         if it:
             body = it.group(2).strip(); nums.setdefault(sec, []).append(int(it.group(1)))
