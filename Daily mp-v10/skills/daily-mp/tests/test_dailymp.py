@@ -229,4 +229,14 @@ class JsonOutput(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertTrue(os.path.exists(os.path.join(t, "mp_20261028.json")))
 
+class FormatBintang(unittest.TestCase):
+    def test_tpe_judul_area_berbintang_menghentikan_daftar_nama(self):
+        t = "STAF: 2 Person\n1. SM: Budi\n2. DRIVER: -\n\n*Area : MBR -A20*\n1. Remove scaffold\n2. Prepare mixer\n\nTotal All: 1 Person\n"
+        people, _ = M.parse_numbered(t)
+        self.assertEqual(len(people), 1)
+
+    def test_dhj_man_power_berbintang(self):
+        t = "*Man Power*\nHSE = Ani\n       = Budi\nHelper = Cici\nTotal manpower = 3 orang\n"
+        self.assertEqual(len(M.parse_dhj(t)[0]), 3)
+
 if __name__ == "__main__": unittest.main()

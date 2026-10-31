@@ -165,7 +165,7 @@ def parse_numbered(text):
         line = raw.strip()
         if not line: continue
         if re.match(r"(?i)^[-*•\s]*total\b", line): break
-        if re.match(r"(?i)^(area\b|headwork\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
+        if re.match(r"(?i)^[*\s]*(area\b|headwork\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
         item = re.match(r"^\d+\s*[.)]\s*(.*)$", line)
         if item:
             body = item.group(1).strip()
@@ -173,7 +173,7 @@ def parse_numbered(text):
             if off or ABSENT_RE.search(body):
                 absent.append(body); continue
             role, name = split_item(body)
-            if name: people.append(mk(section, role, name))
+            if name and name.strip(' -–.'): people.append(mk(section, role, name))
             continue
         hdr = re.match(r"(?i)^(.+?)\s*:\s*\d+\s*person", line)
         if hdr:
@@ -187,9 +187,9 @@ def parse_dhj(text):
     people, role, on = [], None, False
     for raw in clean(text).splitlines():
         line = raw.strip()
-        if re.match(r"(?i)^man\s*power", line): on = True; continue
+        if re.match(r"(?i)^[*\s]*man\s*power", line): on = True; continue
         if not on: continue
-        if re.match(r"(?i)^(total|plan|kondisi)", line): break
+        if re.match(r"(?i)^[*\s]*(total|plan|kondisi)", line): break
         m = re.match(r"^([^=]*?)\s*=\s*(.*)$", line)
         if not m: continue
         if m.group(1).strip(): role = m.group(1).strip()
@@ -313,7 +313,7 @@ def numbering_warnings(text):
     sec, nums, blanks, w = "Manpower", {}, {}, []
     for raw in clean(text).splitlines():
         line = raw.strip()
-        if re.match(r"(?i)^[-*•\s]*total\b", line) or re.match(r"(?i)^(area\b|headwork\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
+        if re.match(r"(?i)^[-*•\s]*total\b", line) or re.match(r"(?i)^[*\s]*(area\b|headwork\b|supporting team|plan\b|kondisi|cuaca|work description|weather|loc\.)", line): break
         it = re.match(r"^(\d+)\s*[.)]\s*(.*)$", line)
         if it:
             body = it.group(2).strip(); nums.setdefault(sec, []).append(int(it.group(1)))
