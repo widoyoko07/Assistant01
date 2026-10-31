@@ -109,6 +109,13 @@ def make_plan(xlsx, mp, cfg):
                 plan.same.append(ref)
             else:
                 plan.conflicts.append((ref, sc, label, cur, v))
+        if not agg:
+            plan.notes.append(f"{sc}: Daily MP tanpa rincian role (hanya total atau PDF belum terbaca); isian di sheet tidak dibandingkan")
+            continue
+        for label, r in rowof.items():       # isian manual yang tidak punya padanan di Daily MP juga dilaporkan
+            cur = ws.cell(r, col).value
+            if label not in agg and isinstance(cur, (int, float)) and not isinstance(cur, bool) and cur > 0:
+                plan.conflicts.append((f"{_col_letter(col)}{r}", sc, label, cur, 0))
     for sc in mp["subs"]:
         if sc not in ms["blocks"] and mp["totals"].get(sc):
             plan.notes.append(f"{sc}: {mp['totals'][sc]} orang tidak ditulis (belum ada aturan blok untuk SC ini)")

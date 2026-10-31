@@ -173,7 +173,7 @@ def wd_rows(messages, cfg, root=None, log=None):
     return out
 
 
-WD_HEADER = ["Tanggal", "SC", "OT", "Start", "Finish", "Jam", "Sumber", "Butir"]
+WD_HEADER = ["Pakai", "Tanggal", "SC", "OT", "Start", "Finish", "Jam", "Sumber", "Butir"]   # Pakai: isi "x" untuk butir yang dipakai di DPR
 
 
 def wd_table(rows):
@@ -181,7 +181,7 @@ def wd_table(rows):
     table = [WD_HEADER]
     for r, items in rows:
         for line, src in items:
-            table.append([r["date"], r["sc"], "Y" if r["ot"] else "", r["start"], r["finish"], r["total"], src, line])
+            table.append(["", r["date"], r["sc"], "Y" if r["ot"] else "", r["start"], r["finish"], r["total"], src, line])
     return table
 
 
@@ -190,7 +190,7 @@ def write_sheet(messages, cfg, src_xlsx, dst_xlsx, root=None, log=None, name="WD
     from .xlsx_sheet import add_sheet
     log = log or RunLog("me_report", root=root)
     table = wd_table(wd_rows(messages, cfg, root, log))
-    add_sheet(src_xlsx, dst_xlsx, name, table, widths=(11, 8, 5, 8, 8, 6, 8, 90))
+    add_sheet(src_xlsx, dst_xlsx, name, table, widths=(7, 11, 8, 5, 8, 8, 6, 8, 90))
     log.done(f"{dst_xlsx} ({len(table) - 1} butir)")
     return dst_xlsx
 

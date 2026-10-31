@@ -97,7 +97,11 @@ me_sheet:          # sheet ME di Subcontractor MP.xlsx: satu blok per SC (nama d
   role_alias:      # penulisan role di Daily MP -> penulisan di sheet
     Common Labor: Commoun Labor
   new_role_default: Skilled Workers   # role baru dari Daily MP (mis. Terminasi, LPS) dicatat sebagai Skilled Workers, seperti isian manual
-  role_map:        # pengecualian role baru -> baris sheet
+  role_map:        # role baru Daily MP -> baris sheet (sesuai isian manual)
     Foreman ER: Foreman
+    Terminasi: Skilled Workers
+    Scaffolding: Scaffolder
+    M: Construction Manager      # 'M : Nama' di Posting SILOG = salah ketik CM
+    LPS: Skilled Workers         # LPS = lokasi kerja (judul bagian), bukan role; orangnya pekerja biasa
 skip_sc: [BME]     # SC yang belum ada aktivitas di site: dilewati oleh cek_data
 me_group: "OWJJ Construction M&E"   # grup narasi + foto progres (bukan SC); dicek oleh cek_data
