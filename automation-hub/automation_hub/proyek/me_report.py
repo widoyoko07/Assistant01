@@ -9,6 +9,7 @@ from datetime import datetime
 
 from ..common import config as cfgmod
 from ..common.runlog import RunLog
+from . import translate
 
 _OT = re.compile(r"\b(?:overtime|ot)\b", re.I)
 _WORD = re.compile(r"[a-z]+")
@@ -160,14 +161,23 @@ def wd_rows(messages, cfg, root=None, log=None):
             recs[key] = {"date": key[0], "sc": key[1], "ot": False}
             recs[key]["start"], recs[key]["finish"], recs[key]["total"] = dpr_hours(False, cfg)
     wd_rules = cfg.get("wd", {})
+    table = translate.load_dict(root)
+    todo = {}
     out = []
     for r in sorted(recs.values(), key=lambda r: (r["date"], r["sc"])):
         sc_items = posting_items(postings.get((r["date"], r["sc"]), ""), wd_rules.get(r["sc"]))
         me_items = work_description(parts, r["sc"], r["date"])
-        merged = [(l, "SC" if k == 0 else "ME") for l, k in merge_items(sc_items, me_items)]
+        merged = []
+        for l, k in merge_items(sc_items, me_items):
+            en, status = translate.to_english(l, table)
+            if status == "perlu":
+                todo.setdefault(l.strip(), []).append(f"{r['date']} {r['sc']}")
+            merged.append((en, "SC" if k == 0 else "ME"))
         if not merged:
             log.warn(f"{r['date']} {r['sc']}: tidak ada butir kerja (aturan wd untuk SC ini belum ada atau Posting kosong)")
         out.append((r, merged))
+    for line, where in todo.items():
+        log.warn(f"belum ada terjemahan Inggris ({where[0]}{' +' + str(len(where) - 1) if len(where) > 1 else ''}): {line}")
     if not out:
         log.warn("tidak ada laporan ME maupun Posting ditemukan")
     return out
