@@ -1,5 +1,8 @@
 """M4b: butir Work Description terpilih ("x" di kolom Pakai, sheet WD Kandidat) -> foto, per (tanggal, SC).
 
+Butir tidak wajib punya foto. Tanggal yang sudah punya cukup foto (folder Drive foto kumpulan pengguna, atau baris 'foto'
+di sheet Work Description) tidak perlu dikumpulkan lagi; gaps() menunjukkan tanggal yang masih kurang.
+
 Pasangan dibuat menurut urutan: butir ke-n ke foto ke-n pada laporan hari itu. Ini usulan awal; tabel hasilnya
 dikoreksi pengguna. Butir tanpa foto dan foto sisa dilaporkan, tidak ditebak.
 """
@@ -9,6 +12,8 @@ from pathlib import Path
 from ..common import config as cfgmod
 from ..common.runlog import RunLog
 
+DRIVE_FULL = 6    # foto per tanggal di folder Drive yang dianggap lengkap
+SHEET_FULL = 4    # baris 'foto' di sheet Work Description; di bawah ini berarti foto belum lengkap
 HEADER = ["Tanggal", "SC", "No", "Butir Final", "Foto", "Catatan"]
 
 
@@ -30,6 +35,40 @@ def selected_items(xlsx, sheet="WD Kandidat", fixes=None):
             text = text.replace(bad, good)
         out.append((r[col["Tanggal"]], r[col["SC"]], text))
     return out
+
+
+def drive_counts(names):
+    """{YYYY-MM-DD: jumlah} dari nama berkas foto di folder Drive ('YYMMDD Judul.jpg')."""
+    out = {}
+    for n in names:
+        if len(n) > 6 and n[:6].isdigit():
+            d = f"20{n[:2]}-{n[2:4]}-{n[4:6]}"
+            out[d] = out.get(d, 0) + 1
+    return out
+
+
+def sheet_counts(xlsx, sheet="Work Description"):
+    """{YYYY-MM-DD: nilai baris 'foto'} dari sheet Work Description (baris 2 = tanggal, baris dengan label 'foto' di kolom A)."""
+    import datetime
+    import openpyxl
+    ws = openpyxl.load_workbook(xlsx, read_only=True, data_only=True)[sheet]
+    dates, foto = None, None
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=6, values_only=True)):
+        if i == 1:
+            dates = row
+        if str(row[0] or "").strip().lower() == "foto":
+            foto = row
+    out = {}
+    for d, v in zip(dates or (), foto or ()):
+        if isinstance(d, datetime.datetime):
+            out[d.date().isoformat()] = v if isinstance(v, (int, float)) else 0
+    return out
+
+
+def gaps(dates, drive, sheet):
+    """[(tanggal, foto di Drive, foto di sheet)] untuk tanggal yang masih perlu dikumpulkan: Drive < DRIVE_FULL dan sheet < SHEET_FULL."""
+    return [(d, drive.get(d, 0), sheet.get(d, 0)) for d in dates
+            if drive.get(d, 0) < DRIVE_FULL and sheet.get(d, 0) < SHEET_FULL]
 
 
 def manifest_photos(root=None):
@@ -58,7 +97,7 @@ def pair(items, photos):
             if n < len(pics):
                 rows.append([d, sc, n + 1, text, pics[n], ""])
             else:
-                rows.append([d, sc, n + 1, text, "", "tidak ada foto di ekspor" if not pics else "foto kurang dari butir"])
+                rows.append([d, sc, n + 1, text, "", "tanpa foto" if not pics else "tanpa foto"])
         for extra in pics[len(texts):]:
             rows.append([d, sc, "", "", extra, "foto sisa (belum dipasangkan)"])
     return rows
