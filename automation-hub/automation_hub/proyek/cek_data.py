@@ -67,7 +67,7 @@ def check(cfg, day, root=None, inbox=None):
             "images": z["images"] if z else 0,
             "last": z["last"] if z else None,
             "posting": (base / "02_mp" / f"{sc} TBM {d8} Posting.txt").exists(),
-            "attendance": (base / "02_mp" / f"{sc} TBM {d8} Attendance.pdf").exists() or (base / "03_mp_att" / f"{sc}_{d8}_Attendance.txt").exists(),
+            "attendance": None if sc in cfg.get("attendance_in_posting", []) else (base / "02_mp" / f"{sc} TBM {d8} Attendance.pdf").exists() or (base / "03_mp_att" / f"{sc}_{d8}_Attendance.txt").exists()),
             "photos": (base / "04_photos" / d8 / sc).is_dir(),
         }))
     return out

@@ -105,3 +105,4 @@ me_sheet:          # sheet ME di Subcontractor MP.xlsx: satu blok per SC (nama d
     LPS: Skilled Workers         # LPS = lokasi kerja (judul bagian), bukan role; orangnya pekerja biasa
 skip_sc: [BME]     # SC yang belum ada aktivitas di site: dilewati oleh cek_data
 me_group: "OWJJ Construction M&E"   # grup narasi + foto progres (bukan SC); dicek oleh cek_data
+attendance_in_posting: [DJK]   # absensi DJK ada di teks Posting (daftar nama), tidak ada PDF Attendance
