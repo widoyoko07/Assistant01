@@ -12,8 +12,9 @@ from ..common.runlog import RunLog
 HEADER = ["Tanggal", "SC", "No", "Butir Final", "Foto", "Catatan"]
 
 
-def selected_items(xlsx, sheet="WD Kandidat"):
-    """[(tanggal, SC, butir)] untuk baris ber-"x" di kolom Pakai. Butir = kolom 'Butir Final' bila terisi, selain itu 'Butir'."""
+def selected_items(xlsx, sheet="WD Kandidat", fixes=None):
+    """[(tanggal, SC, butir)] untuk baris ber-"x" di kolom Pakai. Butir = kolom 'Butir Final' bila terisi, selain itu 'Butir'.
+    fixes {salah: benar} memperbaiki salah ketik yang sudah dikonfirmasi pengguna."""
     import openpyxl
     wb = openpyxl.load_workbook(xlsx, read_only=True)
     rows = wb[sheet].iter_rows(values_only=True)
@@ -24,7 +25,10 @@ def selected_items(xlsx, sheet="WD Kandidat"):
         if str(r[col["Pakai"]] or "").strip().lower() != "x":
             continue
         final = r[col["Butir Final"]] if "Butir Final" in col else None
-        out.append((r[col["Tanggal"]], r[col["SC"]], str(final or r[col["Butir"]]).strip()))
+        text = str(final or r[col["Butir"]]).strip()
+        for bad, good in (fixes or {}).items():
+            text = text.replace(bad, good)
+        out.append((r[col["Tanggal"]], r[col["SC"]], text))
     return out
 
 
@@ -62,7 +66,7 @@ def pair(items, photos):
 
 def write_csv(xlsx, root=None, log=None):
     log = log or RunLog("photo_pairs", root=root)
-    rows = pair(selected_items(xlsx), manifest_photos(root))
+    rows = pair(selected_items(xlsx, fixes=cfgmod.load().get("butir_fix")), manifest_photos(root))
     out_dir = cfgmod.data_dir(root=root) / "05_pairs"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "pasangan_foto_wd.csv"

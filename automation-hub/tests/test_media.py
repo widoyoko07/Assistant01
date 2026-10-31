@@ -59,5 +59,18 @@ class ReportPhotosTest(unittest.TestCase):
             self.assertEqual(M.report_photos(ms, CFG, t), [])
 
 
+
+class ScPhotosTest(unittest.TestCase):
+    def test_progress_photos_exclude_attendance_form(self):
+        with tempfile.TemporaryDirectory() as t:
+            for n in ("form.jpg", "work.jpg"):
+                jpg(t, n)
+            cfg = {"tbm": {"WME": {"header": "WASA MITRA ENGINEERING"}}}
+            msgs = [msg("2026-10-10T07:00:00", "A", "WASA MITRA ENGINEERING\nPLAN", att=["form.jpg"]),
+                    msg("2026-10-10T15:00:00", "B", "", att=["work.jpg"])]
+            got = M.sc_photos(msgs, "WME", cfg, t)
+            self.assertEqual([(r["date"], r["file"].name) for r in got], [("2026-10-10", "work.jpg")])
+
+
 if __name__ == "__main__":
     unittest.main()

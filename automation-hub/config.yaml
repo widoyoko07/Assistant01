@@ -76,9 +76,60 @@ dpr:
   hours:           # jam kerja subcon di DPR; lembur (laporan OT di grup ME) mengganti finish dan total
     normal: {start: "08.00", finish: "17.00", total: 8}
     overtime: {start: "08.00", finish: "21.00", total: 12}
-categories:        # kamus kata kunci K2 -> kategori
-  Rumah Tangga: [listrik, pdam, wifi, galon]
-  Transportasi: [bensin, tol, parkir]
+accounts: [Cash, Gopay, Mandiri, BSI, JAGO, Jago ART, BCA, Dagang, Kas Profit, Flip, Aladin]   # kolom Account di 04.record
+categories:        # kamus kata kunci K2 -> Subcategory di 02.category (urutan = prioritas, yang spesifik di atas)
+  Pindah Kas: [pindah kas]
+  Pajak RIBA: [pajak riba]
+  RIBA: [riba, bunga bank]
+  ART: [art]
+  Gaji: [gaji]
+  Jualan: [jualan, dagangan]
+  Tarik Tabungan: [tarik tabungan]
+  BPJS Kes: [bpjs kes, bpjs kesehatan]
+  BPJS KT/JHT: [bpjs kt, jht]
+  Halo 877: [halo 877]
+  Halo 977: [halo 977]
+  Indihome: [indihome, wifi]
+  Listrik: [listrik, token, pln]
+  PDAM: [pdam]
+  Gas Dapur: [gas, elpiji]
+  Pulsa & Paket Data: [pulsa, paket data, kuota]
+  Air Minum: [galon, air minum]
+  BBM Motor: [bensin, pertalite, pertamax, bbm]
+  BBM Lainnya: [solar]
+  Service Motor: [service motor, servis motor, oli, ganti ban]
+  Transportasi: [tol, parkir, ojek, grab, gojek, krl, mrt, busway, angkot]
+  Belanja Dapur: [sayur, belanja dapur, pasar, beras, telur, ayam, ikan, daging, bumbu, buah, minyak goreng]
+  Belanja Online: [shopee, tokopedia, lazada, tiktok shop]
+  Rumah Tangga: [sabun, detergen, pewangi, tisu, atk]
+  Perawatan Rumah: [perbaikan rumah, tukang, cat]
+  Kesehatan: [obat, dokter, vitamin, apotek, klinik]
+  Tagihan Medis: [tagihan medis, rumah sakit]
+  Pajak: [pajak, pbb, stnk]
+  Tempat Tinggal: [kontrakan, kost, sewa]
+  Perawatan Diri: [potong rambut, cukur, salon, skincare]
+  Pakaian & Aksesori: [baju, celana, sepatu, jaket]
+  Jalan Makan: [makan, jajan, kopi, cemilan, resto, bakso, nasi]
+  Ongkos Safar: [ongkos safar, uang saku]
+  Biaya Tak Terduga: [tak terduga]
+  Pelatihan: [kursus, pelatihan, seminar]
+  Himnah: [himnah]
+  Rufi: [rufi]
+  Ummii: [ummii]
+  Anak & Keluarga: [anak, mainan]
+  Ibu: [ibu]
+  Donasi: [donasi, infaq, sedekah, zakat]
+  Iuran Lain: [iuran]
+  IPL: [ipl]
+  Langgangan Aplikasi: [langganan, netflix, spotify, youtube]
+  Admin Bank: [admin bank, biaya admin]
+  Flip: [biaya transfer]
+  Cicilan Kendaraan: [cicilan motor, cicilan mobil, cicilan kendaraan]
+  Pinjaman Personal: [pinjaman, hutang]
+  Dana Darurat: [dana darurat]
+  Dana Pensiun: [dana pensiun]
+  Investasi Saham: [saham]
+  Logam Mulia: [emas, logam mulia, antam]
 me_sheet:          # sheet ME di Subcontractor MP.xlsx: satu blok per SC (nama di kolom B), satu baris per role (kolom D)
   sheet: ME
   first_row: 313
@@ -106,3 +157,6 @@ me_sheet:          # sheet ME di Subcontractor MP.xlsx: satu blok per SC (nama d
 skip_sc: [BME]     # SC yang belum ada aktivitas di site: dilewati oleh cek_data
 me_group: "OWJJ Construction M&E"   # grup narasi + foto progres (bukan SC); dicek oleh cek_data
 attendance_in_posting: [DJK]   # absensi DJK ada di teks Posting (daftar nama), tidak ada PDF Attendance
+butir_fix:         # salah ketik di kolom Butir Final yang sudah dikonfirmasi pengguna: salah -> benar
+  Modifiation: Modification
+  EXpansioon: Expansion

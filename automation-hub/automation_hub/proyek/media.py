@@ -1,4 +1,4 @@
-"""M3b/M4: foto dari ekspor WA (dengan media) -> PDF Attendance per SC dan foto progres per laporan ME.
+"""M3b/M4: foto dari ekspor WA (dengan media) -> PDF Attendance per SC dan foto progres per laporan ME dan per grup SC.
 
 Lampiran dikaitkan lewat urutan pesan: foto yang dikirim berurutan oleh pengirim yang sama (selang kecil)
 mengikuti pesan teks di depannya. Foto yang tertulis 'omitted' tidak ikut ekspor dan hanya dilaporkan.
@@ -119,3 +119,50 @@ def write_photos(messages, cfg, media_dir, root=None, log=None):
             w.writerows(manifest)
     log.done(f"{len(manifest)} foto, {sum(missing.values())} hilang")
     return manifest
+
+
+def sc_photos(messages, sc, cfg, media_dir, log=None, since=None):
+    """Foto progres di grup SC: [{'date','sc','file'}] per tanggal pesan. Foto form TBM (dipakai untuk PDF Attendance)
+    tidak dihitung sebagai foto progres."""
+    media_dir = Path(media_dir)
+    used = set()
+    rule = cfg.get("tbm", {}).get(sc)
+    if rule:
+        for msg in tbm_split.pick_postings(messages, rule, log).values():
+            used.update(attendance_images(messages, msg, media_dir))
+    out = []
+    for m in messages:
+        if m.get("system"):
+            continue
+        if since and _t(m).date().isoformat() < since:
+            continue
+        for f in _images(m, media_dir):
+            if f not in used:
+                out.append({"date": _t(m).date().isoformat(), "sc": sc, "file": f})
+    return out
+
+
+def write_sc_photos(messages, sc, cfg, media_dir, root=None, log=None, since=None):
+    """Salin foto grup SC ke data/04_photos/<YYYYMMDD>/<SC>/sc_<nn>_<nama asli> dan tambahkan ke manifest.csv
+    (baris lama tidak diubah; baris sumber SC diganti pada pemanggilan ulang)."""
+    log = log or RunLog("media", root=root)
+    base = cfgmod.data_dir(root=root) / "04_photos"
+    count, new = {}, []
+    for r in sc_photos(messages, sc, cfg, media_dir, log, since):
+        count[r["date"]] = count.get(r["date"], 0) + 1
+        dest = base / r["date"].replace("-", "") / sc / f"sc_{count[r['date']]:02d}_{r['file'].name}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(r["file"], dest)
+        new.append([r["date"], sc, "", count[r["date"]], dest.name])
+    path = base / "manifest.csv"
+    keep = []
+    if path.is_file():
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            keep = [r for r in csv.reader(f)][1:]
+    keep = [r for r in keep if not (r[1] == sc and r[4].startswith("sc_"))]
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["date", "sc", "overtime", "no", "file"])
+        w.writerows(keep + new)
+    log.done(f"{sc}: {len(new)} foto grup SC")
+    return new
