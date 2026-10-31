@@ -160,3 +160,25 @@ attendance_in_posting: [DJK]   # absensi DJK ada di teks Posting (daftar nama), 
 butir_fix:         # salah ketik di kolom Butir Final yang sudah dikonfirmasi pengguna: salah -> benar
   Modifiation: Modification
   EXpansioon: Expansion
+pribadi:           # K3: tujuan tulis di OneDrive pribadi. Ganti ke file asli setelah 'doctor' lulus di salinan
+  onedrive_path: "Documents/Doku Keluarga TEST.xlsx"
+  table: "_transaction"
+todjo_attendance:  # form absensi TODJO (kolom Position / PT-CV) -> blok dan baris di sheet ME; hanya baris bertanda tangan yang dihitung
+  blocks: {Dwidjo: "DJK DCIP", Tohoma: "Tohoma"}
+  role_map:
+    SM: Foreman
+    Foreman: Foreman
+    Admin: Admin
+    "Insp Scaff": Scaffolder
+    Scaffolder: Scaffolder
+    Matkon: Material Control
+    SE: Site Engineer
+    "HSE officer": HSE Engineer
+    HSE: HSE Engineer
+    QC: QA/QC Department
+    Surveyor: Surveyor
+    "Ast surv": Surveyor
+    Rigger: Rigger
+    Fitter: Fitter
+    Helper: Commoun Labor
+    SPV: Construction Manager
