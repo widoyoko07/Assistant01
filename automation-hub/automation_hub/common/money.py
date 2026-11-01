@@ -60,14 +60,15 @@ def parse_amount(text):
     return find_amount(text)[0]
 
 
-def strip_amount(text):
-    """Teks tanpa nominal yang terbaca (angka lain seperti nomor HP tetap). Kosong = teks asli."""
+def strip_amount(text, fallback=True):
+    """Teks tanpa nominal yang terbaca (angka lain seperti nomor HP tetap).
+    Bila hanya nominal: teks asli (fallback=True) atau string kosong (fallback=False)."""
     _, spans = find_amount(text)
     out = text
     for a, b in sorted(spans, reverse=True):
         out = out[:a] + " " + out[b:]
     out = re.sub(r"\s+", " ", out).strip(" ,-:;")
-    return out or text.strip()
+    return out or (text.strip() if fallback else "")
 
 
 def transaction_type(text):

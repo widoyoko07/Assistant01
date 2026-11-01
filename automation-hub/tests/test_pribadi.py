@@ -27,13 +27,6 @@ class EntriesTest(unittest.TestCase):
         self.assertIn("tidak terbaca", reply)
         self.assertEqual(self.q.all(), [])
 
-    def test_queue_and_undo_per_sender(self):
-        handle_message("bensin 50rb", TS, 1, self.cats, self.q)
-        handle_message("wifi 350rb", TS, 2, self.cats, self.q)
-        self.assertIn("Dibatalkan: bensin", handle_message("/undo", TS, 1, self.cats, self.q))
-        self.assertEqual([r["note"] for r in self.q.all()], ["wifi"])
-        self.assertIn("Tidak ada", handle_message("/undo", TS, 1, self.cats, self.q))
-
     def test_last_n_survives_clear(self):
         for x in ("a 1rb", "b 2rb", "c 3rb", "d 4rb"):
             handle_message(x, TS, 1, self.cats, self.q)
@@ -42,7 +35,6 @@ class EntriesTest(unittest.TestCase):
         self.assertEqual(len(out.splitlines()), 3)
         self.assertNotIn(" a\n", out + "\n")
         self.assertIn(" d", handle_message("/terakhir", TS, 1, self.cats, self.q))
-        handle_message("/undo", TS, 1, self.cats, self.q)  # antrean kosong: tidak menyentuh arsip
         self.assertEqual(len(self.q.last(10)), 4)
 
     def test_last_backfills_from_old_queue(self):

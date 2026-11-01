@@ -163,6 +163,7 @@ butir_fix:         # salah ketik di kolom Butir Final yang sudah dikonfirmasi pe
 pribadi:           # K3: tujuan tulis di OneDrive pribadi. Ganti ke file asli setelah 'doctor' lulus di salinan
   onedrive_path: "Documents/Doku Keluarga TEST.xlsx"
   table: "_transaction"
+  ledger_file: "Doku Keluarga.final1.xlsx"   # file di folder yang sama dengan Inbox Transaksi.tsv; dibaca /saldo dan /rekap
 todjo_attendance:  # form absensi TODJO (kolom Position / PT-CV) -> blok dan baris di sheet ME; hanya baris bertanda tangan yang dihitung
   blocks: {Dwidjo: "DJK DCIP", Tohoma: "Tohoma"}
   role_map:

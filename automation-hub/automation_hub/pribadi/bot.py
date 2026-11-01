@@ -14,6 +14,7 @@ from pathlib import Path
 from ..common import config
 from ..common.runlog import RunLog
 from .classify import load_lexicon
+from . import ledger as ledger_mod
 from .entries import Queue, handle_message
 
 API = "https://api.telegram.org/bot{token}/{method}"
@@ -57,6 +58,15 @@ def try_sync(log, queue, base, cfg):
         log.warn(f"sync Excel gagal, dicoba lagi: {e}")
 
 
+def ledger_loader(queue, cfg):
+    """Fungsi pembaca buku besar untuk /saldo dan /rekap, atau None bila lokasi file Excel tidak diketahui."""
+    inbox = os.environ.get("INBOX_PATH")
+    xlsx = os.environ.get("LEDGER_PATH") or (str(Path(inbox).parent / cfg["pribadi"]["ledger_file"]) if inbox else None)
+    if not xlsx:
+        return None
+    return lambda: ledger_mod.load(xlsx, inbox, queue.all())
+
+
 def single_instance(path):
     """Kunci agar hanya satu bot yang polling (dua bot = bentrok di Telegram). Kode keluar 3 bila sudah ada."""
     try:
@@ -85,8 +95,9 @@ def run():
     queue = Queue(base / "queue.jsonl")
     offset_file = base / "offset.txt"
     offset = int(offset_file.read_text()) if offset_file.exists() else 0
+    ledger = ledger_loader(queue, cfg)
     lexicon = load_lexicon(base / "lexicon.json")  # dibuat oleh: python -m automation_hub.pribadi.learn <xlsx>
-    me = call(token, "getMe")["username"]  # di grup perintah datang sebagai /undo@namabot
+    me = call(token, "getMe")["username"]  # di grup perintah datang sebagai /bantuan@namabot
     log = RunLog("pribadi_bot")
     print("Bot jalan. Ctrl+C untuk berhenti.")
     try:
@@ -105,7 +116,7 @@ def run():
                     if chat not in allowed or (users and sender not in users):
                         log.skip(f"tidak diizinkan: chat={chat} user={sender}")
                     else:
-                        reply = handle_message(m["text"].replace("@" + me, ""), m["date"], sender, cfg["categories"], queue, cfg.get("accounts"), lexicon)
+                        reply = handle_message(m["text"].replace("@" + me, ""), m["date"], sender, cfg["categories"], queue, cfg.get("accounts"), lexicon, ledger)
                         call(token, "sendMessage", chat_id=chat, text=reply)
                         log.done(f"chat={chat} {sender}: {m['text']}")
                 offset_file.write_text(str(offset))

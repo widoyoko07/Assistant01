@@ -50,6 +50,22 @@ def _check(d, base):
     return d
 
 
+_ONLY = re.compile(rf"^(?:{_EXPR})$", re.IGNORECASE)
+
+
+def only_date(text, base):
+    """Tanggal bila seluruh teks hanya ungkapan tanggal ('kemarin', 'kamis:', '29/10'); selain itu None."""
+    t = text.strip().rstrip(":,")
+    if not _ONLY.match(t):
+        return None
+    try:
+        return _resolve(t, base)
+    except FutureDate:
+        raise
+    except (ValueError, KeyError):
+        return None
+
+
 def extract_date(text, base):
     """(tanggal | None, teks tanpa ungkapan tanggal). Hanya di awal atau akhir pesan; tanggal masa depan = FutureDate."""
     t = text.strip()
