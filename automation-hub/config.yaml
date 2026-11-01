@@ -190,11 +190,11 @@ attendance_sc:     # form absensi SC lain (WKP, BCP): posisi di form -> baris ro
   BCP:
     block: BCP
     role_map: {HSE: HSE Engineer, Mekanik: Skilled Workers, Wiring: Skilled Workers, Busbar: Skilled Workers, Teknisi: Skilled Workers}
+  WME:
+    block: WME
+    role_map: {Site Manager: Construction Manager, Planning Eng: Site Engineer, Piping Eng: Site Engineer, Lifting Eng: Site Engineer, Docon: Staff, Weld Inspect: QA/QC Department, QC: QA/QC Department, SPV Scaff: Supervisor, SPV Piping: Supervisor, SPV Logistic: Supervisor, SPV Proc: Supervisor, SPV Matecon: Supervisor, Ass SPV: Supervisor, SPV HR/GA: Staff, SPV Finance: Staff, HSE Coor: HSE Engineer, HSE: HSE Engineer, Prog Control: Staff, Drive: Staff, Admin: Staff, Forman: Foreman, Welder: Skilled Workers, Fitter: Skilled Workers, Checker: Skilled Workers, Skill: Skilled Workers, Skill Matecon: Skilled Workers, Skill Logistic: Skilled Workers, Rigger: Skilled Workers, Survey: Surveyor, Scaffolder: Scaffolder, Housekeeping: Commoun Labor, Helper: Commoun Labor, Operator: Heavy Equipment Operator}
 dpr_role_map:      # label baris di blok sheet ME (TODJO) -> kolom role di DPR
   Admin: Administration Department
   Rigger: Skilled Workers
   Fitter: Skilled Workers
   Material Control: Staff
-  WME:
-    block: WME
-    role_map: {Site Manager: Construction Manager, Planning Eng: Site Engineer, Piping Eng: Site Engineer, Lifting Eng: Site Engineer, Docon: Staff, Weld Inspect: QA/QC Department, QC: QA/QC Department, SPV Scaff: Supervisor, SPV Piping: Supervisor, SPV Logistic: Supervisor, SPV Proc: Supervisor, SPV Matecon: Supervisor, Ass SPV: Supervisor, SPV HR/GA: Staff, SPV Finance: Staff, HSE Coor: HSE Engineer, HSE: HSE Engineer, Prog Control: Staff, Drive: Staff, Admin: Staff, Forman: Foreman, Welder: Skilled Workers, Fitter: Skilled Workers, Checker: Skilled Workers, Skill: Skilled Workers, Skill Matecon: Skilled Workers, Skill Logistic: Skilled Workers, Rigger: Skilled Workers, Survey: Surveyor, Scaffolder: Scaffolder, Housekeeping: Commoun Labor, Helper: Commoun Labor, Operator: Heavy Equipment Operator}
