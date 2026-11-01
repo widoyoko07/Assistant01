@@ -2,8 +2,9 @@
 
 Yang dikerjakan (edit XML, bukan openpyxl load+save, supaya logo, gambar, sheet Photo dan format tetap utuh):
   1. blok SUB ME (baris 146-185) disusun ulang dari sheet ME (manpower) dan WD Kandidat ('x' + Butir Final);
-  2. isian SUB CIVIL dikosongkan: kolom file Civil berbeda dari DPR final (tanpa kolom Skilled Workers dan Total
-     Manpower, equipment lain), jadi isinya belum bisa dipindah otomatis;
+  2. isi file Civil harian dipindah ke baris 17-29 (office, site area) dan SUB CIVIL (baris 32-144). Kolom Civil
+     berbeda dari DPR final (tanpa Skilled Workers dan Total Manpower, equipment lain), jadi dipetakan menurut NAMA header
+     baris 15. Gaya baris diambil dari baris template sejenis (judul blok, judul area, butir, butir ber-qty, kosong);
   3. tanggal sampul ('DPR '!AA15), nama sheet harian, dan teks hasil rumus di-set ke tanggal baru; Excel menghitung ulang saat dibuka.
 Hasilnya untuk di-review, bukan file terbit.
 """
@@ -176,7 +177,138 @@ def clear_civil(root):
     return n
 
 
-def build(template_xlsx, src_sheet, me_xlsx, wd_xlsx, day, out_path, cfg=None):
+CIVIL_TOP = (17, 29)        # baris office + site area di DPR final (sejajar dengan baris Civil bernomor sama)
+CIVIL_FIRST, CIVIL_LAST = 32, 144
+_NUMERIC_COLS = {"E", "I"} | {_col(c) for c in range(10, 50)}
+
+
+def _norm(s):
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
+
+
+def civil_rows(civil_xlsx, day):
+    """(baris office/site area {no: {kolom: nilai}}, baris blok {urut: {kolom: nilai}}, nama header Civil per kolom)."""
+    import openpyxl
+    from openpyxl.utils import get_column_letter as L
+    ws = openpyxl.load_workbook(civil_xlsx).worksheets[0]
+    got = ws["A11"].value
+    if not hasattr(got, "date") or got.date() != day:
+        raise ValueError(f"file Civil bertanggal {got!r}, bukan {day}")
+    cw = next(r for r in range(17, 60) if ws.cell(r, 1).value == "CONSTRUCTION WORK")
+    tot = next(r for r in range(cw + 1, ws.max_row + 1) if str(ws.cell(r, 10).value or "").startswith("=SUM("))
+    heads = {L(c): _norm(ws.cell(15, c).value) for c in range(10, 50) if ws.cell(15, c).value}
+
+    def grab(r):
+        return {L(c): ws.cell(r, c).value for c in range(2, 50) if ws.cell(r, c).value not in (None, "")}
+    top = {r: grab(r) for r in range(CIVIL_TOP[0], cw)}
+    body = [grab(r) for r in range(cw + 1, tot)]
+    return top, body, heads, cw
+
+
+def column_map(civil_heads, dpr_heads):
+    """{kolom Civil: kolom DPR} menurut nama header; header Civil tanpa padanan -> tidak ada di hasil."""
+    by_name = {v: k for k, v in dpr_heads.items()}
+    return {k: by_name[v] for k, v in civil_heads.items() if v in by_name}
+
+
+def _row_kind(vals):
+    if "B" in vals:
+        return "a"
+    num = any(c not in ("D", "G", "H", "I", "C") for c in vals)
+    if "E" in vals or "F" in vals:
+        return "d"
+    if num or "G" in vals or "H" in vals or "I" in vals:
+        return "b"
+    return "c" if "D" in vals else "e"
+
+
+def _set_values(row, vals, cmap, unmapped):
+    r = int(row.get("r"))
+    for col, v in vals.items():
+        target = cmap.get(col, col) if _col_num(col) >= 10 else col
+        if _col_num(col) >= 10 and col not in cmap:
+            unmapped.append((r, col, v))
+            continue
+        if col in _NUMERIC_COLS or target in _NUMERIC_COLS:
+            try:
+                v = float(v)
+                v = int(v) if v == int(v) else v
+            except (TypeError, ValueError):
+                pass
+        _put(row, target, v)
+
+
+def dpr_heads(template_xlsx, sheet):
+    import openpyxl
+    ws = openpyxl.load_workbook(template_xlsx)[sheet]
+    return {_col(c): _norm(ws.cell(15, c).value) for c in range(10, 50) if ws.cell(15, c).value}
+
+
+def _constants_only(row):
+    return {_split(c.get("r"))[0] for c in row.findall(Q("c"))
+            if c.find(Q("f")) is None and (c.find(Q("v")) is not None or c.find(Q("is")) is not None)}
+
+
+def _fresh(proto, r):
+    row = copy.deepcopy(proto)
+    row.set("r", str(r))
+    for c in row.findall(Q("c")):
+        c.set("r", f"{_split(c.get('r'))[0]}{r}")
+    _blank(row)
+    return row
+
+
+def transfer_civil(root, civil_xlsx, day, heads_dpr):
+    """Pindahkan isi Civil ke baris 17-29 dan 32-144 DPR. Kembalikan laporan: baris dibuang, nilai tanpa kolom tujuan."""
+    data = root.find(Q("sheetData"))
+    rows = {int(r.get("r")): r for r in data.findall(Q("row"))}
+    top, body, heads_civil, cw = civil_rows(civil_xlsx, day)
+    cmap = column_map(heads_civil, heads_dpr)
+    unmapped, dropped = [], []
+    # prototipe gaya dari baris template menurut jenisnya (sebelum baris lama dibuang)
+    proto = {}
+    for r in range(CIVIL_FIRST, CIVIL_LAST + 1):
+        vals = {c: 1 for c in _constants_only(rows[r]) if _col_num(c) <= _col_num("AU")}
+        proto.setdefault(_row_kind(vals), rows[r])
+    missing = {"a", "b", "c", "d", "e"} - set(proto)
+    if missing:
+        raise ValueError(f"template tidak punya baris contoh jenis {sorted(missing)} di baris {CIVIL_FIRST}-{CIVIL_LAST}")
+    proto = {k: copy.deepcopy(v) for k, v in proto.items()}
+    # office + site area: baris sejajar bernomor sama, hanya konstanta yang diganti (rumus template tetap)
+    for r in range(CIVIL_TOP[0], CIVIL_TOP[1] + 1):
+        row = rows[r]
+        for c in row.findall(Q("c")):
+            if c.find(Q("f")) is None and 2 <= _col_num(_split(c.get("r"))[0]) <= _col_num("AX"):
+                for t in ("v", "is"):
+                    for e in c.findall(Q(t)):
+                        c.remove(e)
+                c.attrib.pop("t", None)
+        if r in top:
+            _set_values(row, top[r], cmap, unmapped)
+    if cw > CIVIL_TOP[1] + 1:
+        raise ValueError(f"baris office/site area Civil ({cw - 17}) melebihi tempat di DPR ({CIVIL_TOP[1] - 16})")
+    # SUB CIVIL
+    cap = CIVIL_LAST - CIVIL_FIRST + 1
+    items = list(body)
+    while len(items) > cap:
+        k = next((n for n in range(len(items) - 1, -1, -1) if _row_kind(items[n]) == "e"), None)
+        if k is None:
+            raise ValueError(f"baris SUB CIVIL {len(items)} melebihi {cap} dan tidak ada baris kosong untuk dibuang")
+        dropped.append(f"baris kosong ke-{k + 1} blok Civil")
+        del items[k]
+    for r in range(CIVIL_FIRST, CIVIL_LAST + 1):
+        old = rows[r]
+        vals = items[r - CIVIL_FIRST] if r - CIVIL_FIRST < len(items) else {}
+        row = _fresh(proto[_row_kind(vals)], r)
+        _set_values(row, vals, cmap, unmapped)
+        _put(row, "AJ", None, formula=f'IF(SUM(J{r}:AI{r})=0,"",SUM(J{r}:AI{r}))')
+        old.addprevious(row)
+        data.remove(old)
+    bad = [(r, c, v) for r, c, v in unmapped if isinstance(v, (int, float)) and v]
+    return {"baris_dibuang": dropped, "nilai_tanpa_kolom": bad, "baris_civil": len(body)}
+
+
+def build(template_xlsx, src_sheet, me_xlsx, wd_xlsx, day, out_path, cfg=None, civil_xlsx=None):
     cfg = cfg or cfgmod.load()
     new_sheet = f"{day.day} {day.strftime('%b')}"
     serial = (day - date(1899, 12, 30)).days
@@ -186,7 +318,8 @@ def build(template_xlsx, src_sheet, me_xlsx, wd_xlsx, day, out_path, cfg=None):
         part = _sheet_part(zin, src_sheet)
         cover = _sheet_part(zin, "DPR ")
         root = etree.fromstring(zin.read(part))
-        cleared = clear_civil(root)
+        civil = transfer_civil(root, civil_xlsx, day, dpr_heads(template_xlsx, src_sheet)) if civil_xlsx else None
+        cleared = 0 if civil_xlsx else clear_civil(root)
         pos = fill_me(root, blocks)
         a11 = next((c for c in root.iter(Q("c")) if c.get("r") == "A11"), None)
         if a11 is not None and a11.find(Q("v")) is not None:
@@ -230,4 +363,4 @@ def build(template_xlsx, src_sheet, me_xlsx, wd_xlsx, day, out_path, cfg=None):
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zout:
         for n, (info, data) in out.items():
             zout.writestr(info, data)
-    return {"sheet": new_sheet, "blocks": [(b["name"], r0, h) for b, (r0, h) in zip(blocks, pos)], "civil_cleared": cleared, "notes": notes}
+    return {"sheet": new_sheet, "blocks": [(b["name"], r0, h) for b, (r0, h) in zip(blocks, pos)], "civil_cleared": cleared, "civil": civil, "notes": notes}
