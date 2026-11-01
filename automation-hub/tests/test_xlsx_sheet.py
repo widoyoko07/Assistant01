@@ -44,3 +44,31 @@ class AddSheetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AppendRowsTest(unittest.TestCase):
+    def test_appends_below_last_row_and_keeps_existing(self):
+        with tempfile.TemporaryDirectory() as d:
+            src, dst = Path(d) / "src.xlsx", Path(d) / "dst.xlsx"
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "WD Kandidat"
+            ws.append(["Pakai", "Tanggal", "Butir"])
+            ws.append(["x", "2026-10-30", "- A"])
+            ws.auto_filter.ref = "A1:C2"
+            wb.save(src)
+            first, last = X.append_rows(src, dst, "WD Kandidat", [["", "2026-10-31", "- B & <c>"], ["", "2026-10-31", 5]])
+            self.assertEqual((first, last), (3, 4))
+            ws = openpyxl.load_workbook(dst)["WD Kandidat"]
+            self.assertEqual([c.value for c in ws[2]], ["x", "2026-10-30", "- A"])
+            self.assertEqual(ws["C3"].value, "- B & <c>")
+            self.assertEqual(ws["C4"].value, 5)
+            self.assertEqual(ws.auto_filter.ref, "A1:C4")
+            self.assertEqual(openpyxl.load_workbook(src)["WD Kandidat"].max_row, 2)
+
+    def test_same_file_refused(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "a.xlsx"
+            openpyxl.Workbook().save(p)
+            with self.assertRaises(ValueError):
+                X.append_rows(p, p, "Sheet", [["a"]])

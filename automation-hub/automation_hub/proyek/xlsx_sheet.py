@@ -162,3 +162,54 @@ def fill_empty_cells(src, dst, sheet_name, cells):
         with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
             for info in zin.infolist():
                 zout.writestr(info, new_xml if info.filename == part else zin.read(info.filename))
+
+
+def append_rows(src, dst, sheet_name, rows, style=None):
+    """Tambah baris di BAWAH data terakhir sheet yang sudah ada (teks sebagai inlineStr, angka apa adanya).
+    Baris yang sudah ada tidak disentuh; src tidak pernah diubah. autoFilter diperluas ke baris baru dan nilai
+    filter kolom B (tanggal) ditambah agar baris baru ikut tampil. Kembalikan nomor baris pertama dan terakhir."""
+    from lxml import etree
+    src, dst = Path(src), Path(dst)
+    if src.resolve() == dst.resolve():
+        raise ValueError("dst harus berbeda dari src (file sumber tidak boleh ditimpa)")
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    q = lambda t: f"{{{ns}}}{t}"
+    with zipfile.ZipFile(src) as zin:
+        part = _sheet_part(zin, sheet_name)
+        root = etree.fromstring(zin.read(part))
+        data = root.find(q("sheetData"))
+        last = max((int(r.get("r")) for r in data.findall(q("row"))
+                    if any(c.find(q("v")) is not None or c.find(q("is")) is not None for c in r.findall(q("c")))), default=0)
+        for r in data.findall(q("row")):
+            if int(r.get("r")) > last:
+                data.remove(r)
+        n = last
+        for vals in rows:
+            n += 1
+            row = etree.SubElement(data, q("row"), r=str(n))
+            for i, v in enumerate(vals):
+                if v in (None, ""):
+                    continue
+                c = etree.SubElement(row, q("c"), r=f"{_col(i + 1)}{n}")
+                if style is not None:
+                    c.set("s", str(style))
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    etree.SubElement(c, q("v")).text = str(v)
+                else:
+                    c.set("t", "inlineStr")
+                    etree.SubElement(etree.SubElement(c, q("is")), q("t")).text = _ILLEGAL.sub("", str(v))
+        af = root.find(q("autoFilter"))
+        if af is not None and rows:
+            m = re.match(r"(\$?[A-Z]+\$?\d+):(\$?[A-Z]+\$?)(\d+)$", af.get("ref", ""))
+            if m:
+                af.set("ref", f"{m.group(1)}:{m.group(2)}{n}")
+            flt = af.find(f"{q('filterColumn')}[@colId='1']/{q('filters')}")
+            if flt is not None:
+                have = {x.get("val") for x in flt.findall(q("filter"))}
+                for d in sorted({vals[1] for vals in rows} - have):
+                    etree.SubElement(flt, q("filter"), val=d)
+        new_xml = etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+        with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info in zin.infolist():
+                zout.writestr(info, new_xml if info.filename == part else zin.read(info.filename))
+    return last + 1, n
