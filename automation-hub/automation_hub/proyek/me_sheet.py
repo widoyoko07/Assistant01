@@ -192,14 +192,19 @@ def main(argv=None):
     ap.add_argument("--skip-conflicts", action="store_true")
     ap.add_argument("--out")
     ap.add_argument("--todjo", help="CSV absensi TODJO (todjo_attendance.read), hanya baris 'ya' dihitung")
+    ap.add_argument("--att", action="append", default=[], metavar="SC=CSV", help="CSV absensi SC satu blok (WKP, BCP); boleh diulang")
     a = ap.parse_args(argv)
     cfg = cfgmod.load()
     extra = None
-    if a.todjo:
-        from . import todjo_attendance
-        extra, ragu, unknown = todjo_attendance.count(todjo_attendance.read(a.todjo), cfg)
-        if ragu or unknown:
-            raise SystemExit(f"{len(ragu)} baris ragu dan {len(unknown)} tidak dikenal di {a.todjo}; selesaikan dulu")
+    if a.todjo or a.att:
+        from . import todjo_attendance as ta
+        extra = {}
+        jobs = ([(None, a.todjo)] if a.todjo else []) + [tuple(x.split("=", 1)) for x in a.att]
+        for sc, path in jobs:
+            got, ragu, unknown = (ta.count(ta.read(path), cfg) if sc is None else ta.count_sc(ta.read(path), sc, cfg))
+            if ragu or unknown:
+                raise SystemExit(f"{len(ragu)} baris ragu dan {len(unknown)} tidak dikenal di {path}; selesaikan dulu")
+            extra.update(got)
     plan = make_plan(a.xlsx, json.load(open(a.json, encoding="utf-8")), cfg, extra=extra)
     print(report(plan))
     if a.apply:

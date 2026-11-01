@@ -35,3 +35,23 @@ def count(rows, cfg=None):
             continue
         counts[(block, role)] = counts.get((block, role), 0) + 1
     return counts, doubt, unknown
+
+
+def count_sc(rows, sc, cfg=None):
+    """Seperti count() untuk SC dengan satu blok (WKP, BCP): aturan di config attendance_sc[sc]."""
+    t = (cfg or cfgmod.load())["attendance_sc"][sc]
+    roles = {k.lower(): v for k, v in t["role_map"].items()}
+    counts, doubt, unknown = {}, [], []
+    for r in rows:
+        status = (r["Tanda tangan"] or "").strip().lower()
+        if status == "ragu":
+            doubt.append(r)
+            continue
+        if status != "ya":
+            continue
+        role = roles.get(r["Posisi"].strip().lower())
+        if not role:
+            unknown.append(r)
+            continue
+        counts[(t["block"], role)] = counts.get((t["block"], role), 0) + 1
+    return counts, doubt, unknown

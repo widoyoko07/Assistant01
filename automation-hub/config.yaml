@@ -183,3 +183,15 @@ todjo_attendance:  # form absensi TODJO (kolom Position / PT-CV) -> blok dan bar
     Fitter: Fitter
     Helper: Commoun Labor
     SPV: Construction Manager
+attendance_sc:     # form absensi SC lain (WKP, BCP): posisi di form -> baris role di sheet ME (kamus: Detail_SCs.xlsx); blok = nama blok di kolom B
+  WKP:
+    block: WKP
+    role_map: {SM: Construction Manager, QC Field: QA/QC Department, QC: QA/QC Department, SPV: Supervisor, SPV SCF: Supervisor, HSE: HSE Engineer, Survey: Surveyor, Ass Survey: Surveyor, Werehouse: Staff, ADM Project: Staff, Fitter: Skilled Workers, Skill: Skilled Workers, Welder: Skilled Workers, Rigger: Skilled Workers, Helper: Commoun Labor, Scaffolder: Scaffolder}
+  BCP:
+    block: BCP
+    role_map: {HSE: HSE Engineer, Mekanik: Skilled Workers, Wiring: Skilled Workers, Busbar: Skilled Workers, Teknisi: Skilled Workers}
+dpr_role_map:      # label baris di blok sheet ME (TODJO) -> kolom role di DPR
+  Admin: Administration Department
+  Rigger: Skilled Workers
+  Fitter: Skilled Workers
+  Material Control: Staff
