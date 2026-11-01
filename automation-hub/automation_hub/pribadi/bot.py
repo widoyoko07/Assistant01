@@ -1,7 +1,8 @@
 """K1: bot Telegram (Bot API resmi, long polling, stdlib saja).
 
 Jalankan: python -m automation_hub.pribadi.bot
-Butuh .env: TELEGRAM_TOKEN=... dan ALLOWED_CHAT_IDS=111,222 (kosong = bot menolak semua).
+Butuh .env: TELEGRAM_TOKEN=... dan ALLOWED_CHAT_IDS=111,-100222 (chat pribadi dan/atau grup;
+kosong = bot menolak semua). Opsional ALLOWED_USER_IDS=111,333: di grup, hanya orang ini yang dilayani.
 """
 import json
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 
 from ..common import config
 from ..common.runlog import RunLog
+from .classify import load_lexicon
 from .entries import Queue, handle_message
 
 API = "https://api.telegram.org/bot{token}/{method}"
@@ -32,18 +34,59 @@ def call(token, method, **params):
         return json.load(r)["result"]
 
 
+def try_sync(log, queue, base, cfg):
+    """Kirim antrean ke Excel: file inbox (INBOX_PATH) atau Graph bila login ada. Gagal = antrean tetap."""
+    from . import graph, inbox
+    from .sync import sync_queue
+    if not queue.all():
+        return
+    send = None
+    if os.environ.get("INBOX_PATH"):
+        send = lambda es: inbox.append_entries(os.environ["INBOX_PATH"], es)
+    elif (base / "token.json").exists() and os.environ.get("MS_CLIENT_ID"):
+        g = graph.Graph(os.environ["MS_CLIENT_ID"], base / "token.json")
+        p = cfg["pribadi"]
+        send = lambda es: g.add_rows(p["onedrive_path"], p["table"], [graph.row_values(e) for e in es])
+    if not send:
+        return
+    try:
+        n = sync_queue(send, queue, base / "sent.json")
+        if n:
+            log.done(f"Excel: {n} baris terkirim")
+    except Exception as e:  # file terkunci, jaringan putus, token kedaluwarsa
+        log.warn(f"sync Excel gagal, dicoba lagi: {e}")
+
+
+def single_instance(path):
+    """Kunci agar hanya satu bot yang polling (dua bot = bentrok di Telegram). Kode keluar 3 bila sudah ada."""
+    try:
+        import fcntl
+    except ImportError:  # Windows: tanpa kunci
+        return None
+    f = open(path, "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit(3)
+    return f
+
+
 def run():
     load_env()
     token = os.environ.get("TELEGRAM_TOKEN")
     allowed = {int(x) for x in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if x.strip()}
+    users = {int(x) for x in os.environ.get("ALLOWED_USER_IDS", "").split(",") if x.strip()}
     if not token:
         raise SystemExit("TELEGRAM_TOKEN belum diisi di .env")
     cfg = config.load()
     base = config.data_dir() / "07_pribadi"
     base.mkdir(parents=True, exist_ok=True)
+    lock = single_instance(base / "bot.lock")  # noqa: F841 (dipegang selama bot hidup)
     queue = Queue(base / "queue.jsonl")
     offset_file = base / "offset.txt"
     offset = int(offset_file.read_text()) if offset_file.exists() else 0
+    lexicon = load_lexicon(base / "lexicon.json")  # dibuat oleh: python -m automation_hub.pribadi.learn <xlsx>
+    me = call(token, "getMe")["username"]  # di grup perintah datang sebagai /undo@namabot
     log = RunLog("pribadi_bot")
     print("Bot jalan. Ctrl+C untuk berhenti.")
     try:
@@ -59,13 +102,14 @@ def run():
                 m = u.get("message")
                 if m and m.get("text"):
                     chat, sender = m["chat"]["id"], m["from"]["id"]
-                    if chat not in allowed:
-                        log.skip(f"chat tidak diizinkan: {chat}")
+                    if chat not in allowed or (users and sender not in users):
+                        log.skip(f"tidak diizinkan: chat={chat} user={sender}")
                     else:
-                        reply = handle_message(m["text"], m["date"], sender, cfg["categories"], queue)
+                        reply = handle_message(m["text"].replace("@" + me, ""), m["date"], sender, cfg["categories"], queue, cfg.get("accounts"), lexicon)
                         call(token, "sendMessage", chat_id=chat, text=reply)
-                        log.done(f"{sender}: {m['text']}")
+                        log.done(f"chat={chat} {sender}: {m['text']}")
                 offset_file.write_text(str(offset))
+            try_sync(log, queue, base, cfg)
     except KeyboardInterrupt:
         pass
     print(log.summary())

@@ -1,0 +1,18 @@
+' Tempel ke ThisWorkbook di VBAProject (PERSONAL.XLSB). Jalan setiap Excel dibuka.
+Option Explicit
+
+Private WithEvents App As Application
+
+Private Sub Workbook_Open()
+    Set App = Application
+    PullAllOpen          ' file keuangan yang sudah terbuka
+    ScheduleNext         ' mulai penarikan berkala
+End Sub
+
+Private Sub App_WorkbookOpen(ByVal Wb As Workbook)
+    If IsTarget(Wb) Then Pull Wb, True      ' file keuangan dibuka belakangan
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    CancelTimer
+End Sub

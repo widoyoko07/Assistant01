@@ -27,9 +27,10 @@ def _number(num, has_unit):
     return None  # mis. "1,5" tanpa satuan: tidak ditebak
 
 
-def parse_amount(text):
-    """Nominal rupiah (int) dari kalimat, atau None. Kandidat bersatuan/Rp/ribuan diutamakan."""
-    best = None  # (skor, nilai)
+def find_amount(text):
+    """(nominal rupiah int, [(awal, akhir)] posisi nominal di teks) atau (None, []).
+    Kandidat bersatuan/Rp/ribuan diutamakan."""
+    best = None  # (skor, nilai, [posisi])
     ambiguous = False  # dua nominal berbeda dengan skor tertinggi sama: tidak ditebak
     for m in _AMOUNT.finditer(text):
         unit = (m.group("unit") or "").lower()
@@ -46,14 +47,33 @@ def parse_amount(text):
         if score == 0:
             continue  # angka kecil telanjang ("2 botol") bukan nominal
         if best is None or score > best[0]:
-            best, ambiguous = (score, int(val)), False
+            best, ambiguous = (score, int(val), [m.span()]), False
         elif score == best[0] and int(val) != best[1]:
             ambiguous = True
-    return None if ambiguous or best is None else best[1]
+        elif score == best[0]:
+            best[2].append(m.span())  # nominal yang sama disebut dua kali
+    return (None, []) if ambiguous or best is None else (best[1], best[2])
+
+
+def parse_amount(text):
+    """Nominal rupiah (int) dari kalimat, atau None."""
+    return find_amount(text)[0]
+
+
+def strip_amount(text):
+    """Teks tanpa nominal yang terbaca (angka lain seperti nomor HP tetap). Kosong = teks asli."""
+    _, spans = find_amount(text)
+    out = text
+    for a, b in sorted(spans, reverse=True):
+        out = out[:a] + " " + out[b:]
+    out = re.sub(r"\s+", " ", out).strip(" ,-:;")
+    return out or text.strip()
 
 
 def transaction_type(text):
     t = text.strip().lower()
+    if t.startswith("-"):
+        return "pengeluaran"
     if t.startswith("+") or any(w in t for w in INCOME_WORDS):
         return "pemasukan"
     return "pengeluaran"
