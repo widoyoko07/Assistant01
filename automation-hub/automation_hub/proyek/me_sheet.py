@@ -69,8 +69,9 @@ def map_role(posisi, ms):
     return ms.get("role_alias", {}).get(posisi, posisi)
 
 
-def make_plan(xlsx, mp, cfg):
-    """Bandingkan JSON Daily MP dengan sheet ME. Tidak menulis apa pun."""
+def make_plan(xlsx, mp, cfg, extra=None):
+    """Bandingkan JSON Daily MP dengan sheet ME. Tidak menulis apa pun.
+    extra: {(nama blok, role): jumlah} dari bacaan form absensi (TODJO -> blok Tohoma / DJK DCIP), diperlakukan sama."""
     import openpyxl
     ms = cfg["me_sheet"]
     d = date.fromisoformat(mp["date"])
@@ -116,6 +117,26 @@ def make_plan(xlsx, mp, cfg):
             cur = ws.cell(r, col).value
             if label not in agg and isinstance(cur, (int, float)) and not isinstance(cur, bool) and cur > 0:
                 plan.conflicts.append((f"{_col_letter(col)}{r}", sc, label, cur, 0))
+    for name in sorted({b for b, _ in (extra or {})}):
+        if name not in blocks:
+            plan.notes.append(f"{name}: blok tidak ada di kolom B sheet {ms['sheet']}")
+            continue
+        r0, r1 = blocks[name]
+        rowof = {str(ws.cell(r, 4).value).strip(): r for r in range(r0, r1 + 1) if ws.cell(r, 4).value}
+        for (b, label), v in sorted(extra.items()):
+            if b != name or v <= 0:
+                continue
+            r = rowof.get(label)
+            if r is None:
+                plan.notes.append(f"{name}: role '{label}' ({v}) tidak punya baris di blok, tidak ditulis")
+                continue
+            ref, cur = f"{_col_letter(col)}{r}", ws.cell(r, col).value
+            if cur in ABSENT:
+                plan.cells[ref] = v
+            elif cur == v:
+                plan.same.append(ref)
+            else:
+                plan.conflicts.append((ref, name, label, cur, v))
     for sc in mp["subs"]:
         if sc not in ms["blocks"] and mp["totals"].get(sc):
             plan.notes.append(f"{sc}: {mp['totals'][sc]} orang tidak ditulis (belum ada aturan blok untuk SC ini)")
@@ -170,9 +191,16 @@ def main(argv=None):
     ap.add_argument("--apply", action="store_true", help="tulis (tanpa ini hanya dry run)")
     ap.add_argument("--skip-conflicts", action="store_true")
     ap.add_argument("--out")
+    ap.add_argument("--todjo", help="CSV absensi TODJO (todjo_attendance.read), hanya baris 'ya' dihitung")
     a = ap.parse_args(argv)
     cfg = cfgmod.load()
-    plan = make_plan(a.xlsx, json.load(open(a.json, encoding="utf-8")), cfg)
+    extra = None
+    if a.todjo:
+        from . import todjo_attendance
+        extra, ragu, unknown = todjo_attendance.count(todjo_attendance.read(a.todjo), cfg)
+        if ragu or unknown:
+            raise SystemExit(f"{len(ragu)} baris ragu dan {len(unknown)} tidak dikenal di {a.todjo}; selesaikan dulu")
+    plan = make_plan(a.xlsx, json.load(open(a.json, encoding="utf-8")), cfg, extra=extra)
     print(report(plan))
     if a.apply:
         dst = apply_plan(a.xlsx, plan, cfg, dst=a.out, skip_conflicts=a.skip_conflicts)

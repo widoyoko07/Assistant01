@@ -75,6 +75,14 @@ class PlanApplyTest(unittest.TestCase):
             self.assertEqual(plan.same, ["F314"])
             self.assertEqual([c[:2] for c in plan.conflicts], [("F315", "TPE")])
 
+    def test_extra_counts_from_attendance_fill_named_block_and_keep_manual(self):
+        with tempfile.TemporaryDirectory() as t:
+            src = make(t, {(321, COL + 1): 5})
+            plan = MS.make_plan(src, mp(self.D, Supervisor=1), CFG, extra={("WME", "Supervisor"): 5, ("WME", "Foreman"): 2, ("Nope", "X"): 1})
+            self.assertEqual(plan.same, ["F321"])
+            self.assertEqual(plan.cells, {"F314": 1})
+            self.assertTrue(any("Foreman" in n for n in plan.notes) and any("Nope" in n for n in plan.notes))
+
     def test_apply_stops_on_conflict_unless_skipped_and_never_overwrites(self):
         with tempfile.TemporaryDirectory() as t:
             src = make(t, {(315, COL + 1): 7})
