@@ -15,7 +15,7 @@ from ..common import config
 from ..common.runlog import RunLog
 from .classify import load_lexicon
 from . import ledger as ledger_mod
-from .entries import Queue, handle_message
+from .entries import Ctx, Queue, handle_message
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -43,7 +43,8 @@ def try_sync(log, queue, base, cfg):
         return
     send = None
     if os.environ.get("INBOX_PATH"):
-        send = lambda es: inbox.append_entries(os.environ["INBOX_PATH"], es)
+        folder, p = Path(os.environ["INBOX_PATH"]).parent, cfg["pribadi"]
+        send = lambda es: inbox.append_entries(os.environ["INBOX_PATH"], es, folder / p["inbox_bbm_file"], folder / p["inbox_listrik_file"])
     elif (base / "token.json").exists() and os.environ.get("MS_CLIENT_ID"):
         g = graph.Graph(os.environ["MS_CLIENT_ID"], base / "token.json")
         p = cfg["pribadi"]
@@ -58,13 +59,28 @@ def try_sync(log, queue, base, cfg):
         log.warn(f"sync Excel gagal, dicoba lagi: {e}")
 
 
+def ledger_paths():
+    """(file xlsx, file inbox transaksi) dari .env, atau (None, ...) bila lokasi file Excel tidak diketahui."""
+    inbox = os.environ.get("INBOX_PATH")
+    return os.environ.get("LEDGER_PATH"), inbox
+
+
 def ledger_loader(queue, cfg):
     """Fungsi pembaca buku besar untuk /saldo dan /rekap, atau None bila lokasi file Excel tidak diketahui."""
-    inbox = os.environ.get("INBOX_PATH")
-    xlsx = os.environ.get("LEDGER_PATH") or (str(Path(inbox).parent / cfg["pribadi"]["ledger_file"]) if inbox else None)
+    xlsx, inbox = ledger_paths()
+    xlsx = xlsx or (str(Path(inbox).parent / cfg["pribadi"]["ledger_file"]) if inbox else None)
     if not xlsx:
         return None
     return lambda: ledger_mod.load(xlsx, inbox, queue.all())
+
+
+def make_ctx(queue, cfg):
+    """Konteks BBM/listrik untuk handle_message; tabel hanya bisa dibaca bila lokasi file Excel diketahui."""
+    xlsx, inbox = ledger_paths()
+    pr = cfg["pribadi"]
+    xlsx = xlsx or (str(Path(inbox).parent / pr["ledger_file"]) if inbox else None)
+    folder = Path(inbox).parent if inbox else Path(xlsx).parent if xlsx else None
+    return Ctx(pr, ledger_mod.Tables(xlsx, folder, pr, queue) if xlsx else None)
 
 
 def single_instance(path):
@@ -96,6 +112,7 @@ def run():
     offset_file = base / "offset.txt"
     offset = int(offset_file.read_text()) if offset_file.exists() else 0
     ledger = ledger_loader(queue, cfg)
+    ctx = make_ctx(queue, cfg)
     lexicon = load_lexicon(base / "lexicon.json")  # dibuat oleh: python -m automation_hub.pribadi.learn <xlsx>
     me = call(token, "getMe")["username"]  # di grup perintah datang sebagai /bantuan@namabot
     log = RunLog("pribadi_bot")
@@ -116,7 +133,7 @@ def run():
                     if chat not in allowed or (users and sender not in users):
                         log.skip(f"tidak diizinkan: chat={chat} user={sender}")
                     else:
-                        reply = handle_message(m["text"].replace("@" + me, ""), m["date"], sender, cfg["categories"], queue, cfg.get("accounts"), lexicon, ledger)
+                        reply = handle_message(m["text"].replace("@" + me, ""), m["date"], sender, cfg["categories"], queue, cfg.get("accounts"), lexicon, ledger, ctx)
                         call(token, "sendMessage", chat_id=chat, text=reply)
                         log.done(f"chat={chat} {sender}: {m['text']}")
                 offset_file.write_text(str(offset))

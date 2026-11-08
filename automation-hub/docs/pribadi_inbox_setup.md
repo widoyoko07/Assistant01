@@ -23,3 +23,16 @@ Jalankan ulang bot; setiap pesan yang tercatat langsung ditambahkan ke file itu.
 ## Catatan
 - Makro membuat sheet tersembunyi `inbox_log` berisi ID yang sudah ditarik. Jangan dihapus, atau semua inbox ditarik ulang.
 - Makro belum diuji di Excel Anda; hasil uji bagian 3 menentukan perlu tidaknya penyesuaian.
+
+## K9: BBM motor dan token listrik (makro versi baru)
+Bot kini menulis dua file inbox tambahan di folder yang sama: `Inbox BBM.tsv` (ke tabel `_bbmmotor`, sheet `BBM`) dan
+`Inbox Listrik.tsv` (ke tabel `_listrik`, sheet `Listrik`). Makro lama hanya menarik `_transaction`, jadi **makro harus diganti**:
+
+1. Alt+F11 -> buka modul `TarikInbox` di `VBAProject (PERSONAL.XLSB)` -> pilih semua (Ctrl+A) -> hapus.
+2. Salin seluruh isi `docs/pribadi_inbox_macro.bas`, **kecuali baris pertama** (`Attribute VB_Name = ...`), tempel ke modul itu. Simpan.
+3. Uji dulu di salinan: tutup file asli, buka salinannya (File -> Save As, mis. `Doku Keluarga TEST2.xlsx`; harus memuat tabel `_bbmmotor` dan
+   `_listrik`). Kirim ke bot: `jago BP 92 Supra 40rb 3.05L km<km sekarang>` dan `meter 95,3`, lalu klik `TarikInbox`. Harus muncul:
+   1 baris di `_transaction`, 1 di `_bbmmotor`, 1 di `_listrik` (kolom rumus Selisih/kWH/Jam ikut terisi). Klik lagi: 0 baris baru.
+4. Bila lolos, tidak ada langkah lain: file asli ikut ditarik otomatis (saat dibuka dan tiap 5 menit).
+- Tabel yang tidak ada di sebuah file, atau file inbox yang belum ada, dilewati tanpa pesan.
+- Format pesan ada di `/bantuan`.

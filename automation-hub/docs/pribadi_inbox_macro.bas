@@ -1,14 +1,16 @@
 Attribute VB_Name = "TarikInbox"
 Option Explicit
-' Menarik baris baru dari Inbox Transaksi.tsv (ditulis bot) ke tabel _transaction di 04.record.
+' Menarik baris baru dari file inbox (ditulis bot) ke tiga tabel:
+'   Inbox Transaksi.tsv -> _transaction (sheet 04.record)
+'   Inbox BBM.tsv       -> _bbmmotor    (sheet BBM)
+'   Inbox Listrik.tsv   -> _listrik     (sheet Listrik)
 ' Aman dijalankan berulang: ID yang sudah ditarik dicatat di sheet tersembunyi "inbox_log".
+' Tabel yang tidak ada di sebuah file Excel, atau file inbox yang belum ada, dilewati tanpa pesan.
 ' Simpan di PERSONAL.XLSB (Module1) bersama kode ThisWorkbook di docs/pribadi_inbox_thisworkbook.txt.
 ' TarikInbox = manual (ada kotak pesan). Otomatis: saat file dibuka dan tiap INTERVAL selama Excel terbuka.
 
-Private Const SHEET_NAME As String = "04.record"
-Private Const TABLE_NAME As String = "_transaction"
 Private Const LOG_SHEET As String = "inbox_log"
-Private Const INBOX_FILE As String = "\Documents\Inbox Transaksi.tsv"
+Private Const INBOX_DIR As String = "\Documents\"
 Private Const TARGET_PATTERN As String = "Doku Keluarga*"   ' nama file yang ikut otomatis
 Private Const INTERVAL As String = "00:05:00"                ' jeda penarikan berkala (jj:mm:dd)
 Private nextTick As Date
@@ -17,28 +19,62 @@ Public Sub TarikInbox()
     Pull ActiveWorkbook, False
 End Sub
 
+' Jenis 1 = transaksi, 2 = BBM motor, 3 = listrik
+Private Sub KindInfo(kind As Long, fileName As String, sheetName As String, tableName As String, minCols As Long)
+    Select Case kind
+        Case 1: fileName = "Inbox Transaksi.tsv": sheetName = "04.record": tableName = "_transaction": minCols = 8
+        Case 2: fileName = "Inbox BBM.tsv": sheetName = "BBM": tableName = "_bbmmotor": minCols = 9
+        Case 3: fileName = "Inbox Listrik.tsv": sheetName = "Listrik": tableName = "_listrik": minCols = 4
+    End Select
+End Sub
+
 Public Function IsTarget(wb As Workbook) As Boolean
     Dim lo As ListObject
     If wb.ReadOnly Then Exit Function
     If Not (wb.Name Like TARGET_PATTERN) Then Exit Function
     On Error Resume Next
-    Set lo = wb.Worksheets(SHEET_NAME).ListObjects(TABLE_NAME)
+    Set lo = wb.Worksheets("04.record").ListObjects("_transaction")
     On Error GoTo 0
     IsTarget = Not lo Is Nothing
 End Function
 
 Public Sub Pull(wb As Workbook, quiet As Boolean)
-    Dim lo As ListObject, path As String, logWs As Worksheet
-    Dim done As Object, r As Long, lines() As String, f() As String, i As Long, added As Long
+    Dim k As Long, n(1 To 3) As Long, msg As String
     On Error GoTo Fail
-    Set lo = wb.Worksheets(SHEET_NAME).ListObjects(TABLE_NAME)
-    path = Environ("OneDriveConsumer") & INBOX_FILE
+    Application.ScreenUpdating = False
+    For k = 1 To 3
+        n(k) = PullOne(wb, k, quiet)
+        If n(k) < 0 Then n(k) = 0
+    Next k
+    Application.ScreenUpdating = True
+    If Not quiet Then
+        msg = n(1) & " transaksi ke _transaction, " & n(2) & " baris ke _bbmmotor, " & n(3) & " baris ke _listrik."
+        MsgBox msg, vbInformation
+    End If
+    Exit Sub
+Fail:
+    Application.ScreenUpdating = True
+    If Not quiet Then MsgBox "Gagal menarik inbox: " & Err.Description, vbExclamation
+End Sub
+
+' Jumlah baris yang ditambahkan, atau -1 bila dilewati (tabel/file tidak ada)
+Private Function PullOne(wb As Workbook, kind As Long, quiet As Boolean) As Long
+    Dim lo As ListObject, path As String, logWs As Worksheet, done As Object
+    Dim r As Long, lines() As String, f() As String, i As Long
+    Dim fileName As String, sheetName As String, tableName As String, minCols As Long
+    PullOne = -1
+    KindInfo kind, fileName, sheetName, tableName, minCols
+    On Error Resume Next
+    Set lo = wb.Worksheets(sheetName).ListObjects(tableName)
+    On Error GoTo 0
+    If lo Is Nothing Then Exit Function
+    path = Environ("OneDriveConsumer") & INBOX_DIR & fileName
     If Dir(path) = "" Then
-        If Not quiet Then MsgBox "File inbox tidak ditemukan:" & vbLf & path, vbExclamation
-        Exit Sub
+        If kind = 1 And Not quiet Then MsgBox "File inbox tidak ditemukan:" & vbLf & path, vbExclamation
+        Exit Function
     End If
 
-    Application.ScreenUpdating = False
+    PullOne = 0
     Set logWs = GetLogSheet(wb)
     Set done = CreateObject("Scripting.Dictionary")
     For r = 1 To logWs.Cells(logWs.Rows.Count, 1).End(xlUp).Row
@@ -49,45 +85,62 @@ Public Sub Pull(wb As Workbook, quiet As Boolean)
     For i = 1 To UBound(lines)                        ' baris 0 = header
         If Len(lines(i)) > 0 Then
             f = Split(lines(i), vbTab)
-            If UBound(f) >= 7 Then                    ' 8 kolom lengkap; baris setengah tertulis dilewati
+            If UBound(f) >= minCols - 1 Then          ' kolom lengkap; baris setengah tertulis dilewati
                 If Not done.Exists(f(0)) Then
-                    AddRow lo, f
+                    AddRow lo, kind, f
                     logWs.Cells(logWs.Cells(logWs.Rows.Count, 1).End(xlUp).Row + 1, 1).Value = f(0)
                     done(f(0)) = True
-                    added = added + 1
+                    PullOne = PullOne + 1
                 End If
             End If
         End If
     Next i
-    Application.ScreenUpdating = True
-    If Not quiet Then MsgBox added & " transaksi baru ditarik ke " & TABLE_NAME & ".", vbInformation
-    Exit Sub
-Fail:
-    Application.ScreenUpdating = True
-    If Not quiet Then MsgBox "Gagal menarik inbox: " & Err.Description, vbExclamation
+End Function
+
+Private Sub SetCell(lr As ListRow, lo As ListObject, colName As String, v As Variant)
+    lr.Range.Cells(1, lo.ListColumns(colName).Index).Value = v
 End Sub
 
-Private Sub AddRow(lo As ListObject, f() As String)
-    Dim prev As Range, lr As ListRow, c As ListColumn
-    Set prev = lo.ListRows(lo.ListRows.Count).Range          ' baris terakhir sebelum ditambah = sumber rumus
+Private Sub AddRow(lo As ListObject, kind As Long, f() As String)
+    Dim prev As Range, lr As ListRow, c As ListColumn, written As String
+    If lo.ListRows.Count > 0 Then Set prev = lo.ListRows(lo.ListRows.Count).Range   ' baris terakhir sebelum ditambah = sumber rumus
     Set lr = lo.ListRows.Add
-    With lr.Range
-        .Cells(1, lo.ListColumns("Date").Index).Value = DateSerial(CInt(Left(f(1), 4)), CInt(Mid(f(1), 6, 2)), CInt(Mid(f(1), 9, 2)))
-        .Cells(1, lo.ListColumns("Account").Index).Value = f(2)
-        .Cells(1, lo.ListColumns("Description").Index).Value = f(3)
-        .Cells(1, lo.ListColumns("Debit (Spend)").Index).Value = Val(f(4))
-        .Cells(1, lo.ListColumns("Credit (Income)").Index).Value = Val(f(5))
-        .Cells(1, lo.ListColumns("Subcategory").Index).Value = f(6)
-    End With
+    Select Case kind
+        Case 1
+            written = "|Date|Account|Description|Debit (Spend)|Credit (Income)|Subcategory|"
+            SetCell lr, lo, "Date", DateSerial(CInt(Left(f(1), 4)), CInt(Mid(f(1), 6, 2)), CInt(Mid(f(1), 9, 2)))
+            SetCell lr, lo, "Account", f(2)
+            SetCell lr, lo, "Description", f(3)
+            SetCell lr, lo, "Debit (Spend)", Val(f(4))
+            SetCell lr, lo, "Credit (Income)", Val(f(5))
+            SetCell lr, lo, "Subcategory", f(6)
+        Case 2
+            written = "|TANGGAL|SUB KATEGORI|UANG KELUAR|POSISI KAS|KETERANGAN|LITER|HARSAT|KM|"
+            SetCell lr, lo, "TANGGAL", DateSerial(CInt(Left(f(1), 4)), CInt(Mid(f(1), 6, 2)), CInt(Mid(f(1), 9, 2)))
+            SetCell lr, lo, "SUB KATEGORI", f(2)
+            SetCell lr, lo, "UANG KELUAR", Val(f(3))
+            SetCell lr, lo, "POSISI KAS", f(4)
+            SetCell lr, lo, "KETERANGAN", f(5)
+            SetCell lr, lo, "LITER", Val(f(6))
+            SetCell lr, lo, "HARSAT", Val(f(7))
+            SetCell lr, lo, "KM", Val(f(8))
+        Case 3
+            written = "|Waktu|kWH Topup|kWH Sisa|"
+            SetCell lr, lo, "Waktu", DateSerial(CInt(Left(f(1), 4)), CInt(Mid(f(1), 6, 2)), CInt(Mid(f(1), 9, 2))) _
+                + TimeSerial(CInt(Mid(f(1), 12, 2)), CInt(Mid(f(1), 15, 2)), 0)
+            If Len(f(2)) > 0 Then SetCell lr, lo, "kWH Topup", Val(f(2))   ' kosong = bukan isi ulang
+            SetCell lr, lo, "kWH Sisa", Val(f(3))
+    End Select
+    If prev Is Nothing Then Exit Sub
     For Each c In lo.ListColumns                              ' kolom rumus: salin dari baris sebelumnya
-        Select Case c.Name
-            Case "Date", "Account", "Description", "Debit (Spend)", "Credit (Income)", "Subcategory"
-            Case Else
-                If prev.Cells(1, c.Index).HasFormula Then CopyFormula prev.Cells(1, c.Index), lr.Range.Cells(1, c.Index)
-        End Select
+        If InStr(written, "|" & c.Name & "|") = 0 Then
+            If prev.Cells(1, c.Index).HasFormula Then CopyFormula prev.Cells(1, c.Index), lr.Range.Cells(1, c.Index)
+        End If
     Next c
-    If prev.Cells(1, 1).Offset(0, -1).HasFormula Then         ' kolom B (subtotal berjalan) di luar tabel
-        CopyFormula prev.Cells(1, 1).Offset(0, -1), lr.Range.Cells(1, 1).Offset(0, -1)
+    If kind = 1 Then
+        If prev.Cells(1, 1).Offset(0, -1).HasFormula Then     ' kolom B (subtotal berjalan) di luar tabel
+            CopyFormula prev.Cells(1, 1).Offset(0, -1), lr.Range.Cells(1, 1).Offset(0, -1)
+        End If
     End If
 End Sub
 

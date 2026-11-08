@@ -5,6 +5,9 @@ import json
 
 def entry_id(e):
     key = "|".join(str(e.get(k)) for k in ("ts", "sender", "account", "type", "amount", "category", "note"))
+    extra = {k: e[k] for k in ("bbm", "listrik") if e.get(k)}  # ID entri lama tidak berubah
+    if extra:
+        key += "|" + json.dumps(extra, sort_keys=True)
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
 

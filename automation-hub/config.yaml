@@ -164,6 +164,22 @@ pribadi:           # K3: tujuan tulis di OneDrive pribadi. Ganti ke file asli se
   onedrive_path: "Documents/Doku Keluarga TEST.xlsx"
   table: "_transaction"
   ledger_file: "Doku Keluarga.final1.xlsx"   # file di folder yang sama dengan Inbox Transaksi.tsv; dibaca /saldo dan /rekap
+  category_table: {sheet: "02.category", table: "_catagories"}   # daftar subcategory sah untuk subcategory yang ditulis di pesan
+  inbox_bbm_file: "Inbox BBM.tsv"            # K9: ditulis bot, ditarik makro ke tabel _bbmmotor
+  inbox_listrik_file: "Inbox Listrik.tsv"    # K9: ditulis bot, ditarik makro ke tabel _listrik
+  bbm:
+    sheet: BBM
+    table: _bbmmotor
+    window_fills: 12       # pakai sekian isian terakhir untuk km/L (data lama diabaikan); rentang wajar 10-15
+    max_km_jump: 1000      # km baru lebih dari km terakhir + ini ditolak (anti salah ketik); 'paksa' menimpa
+    motors:                # kata kunci di keterangan = nama motor; tank (liter) kosong = liter terbesar di data
+      Supra: {model: "SUPRA X 125", plat: "B 3132 KGW"}
+      Vario: {model: "VARIO 110", plat: "B 4807 KBK"}
+  listrik:
+    sheet: Listrik
+    table: _listrik
+    window_days: null      # null = rata-rata seluruh riwayat (rumus tabel); isi angka untuk N hari terakhir saja
+    low_kwh: 20
 todjo_attendance:  # form absensi TODJO (kolom Position / PT-CV) -> blok dan baris di sheet ME; hanya baris bertanda tangan yang dihitung
   blocks: {Dwidjo: "DJK DCIP", Tohoma: "Tohoma"}
   role_map:
