@@ -165,6 +165,7 @@ pribadi:           # K3: tujuan tulis di OneDrive pribadi. Ganti ke file asli se
   table: "_transaction"
   ledger_file: "Doku Keluarga.final1.xlsx"   # file di folder yang sama dengan Inbox Transaksi.tsv; dibaca /saldo dan /rekap
   category_table: {sheet: "02.category", table: "_catagories"}   # daftar subcategory sah untuk subcategory yang ditulis di pesan
+  confirm_over: 5000000                      # K8f: transaksi di atas nominal ini (bukan pindah kas) ditahan sampai dijawab "ya"; 0 = nonaktif
   inbox_bbm_file: "Inbox BBM.tsv"            # K9: ditulis bot, ditarik makro ke tabel _bbmmotor
   inbox_listrik_file: "Inbox Listrik.tsv"    # K9: ditulis bot, ditarik makro ke tabel _listrik
   bbm:

@@ -28,7 +28,8 @@ def build_help(accounts=None):
             "- banyak sekaligus: satu baris satu transaksi. Baris pertama berisi tanggal saja (mis. kemarin) berlaku untuk semua baris\n"
             "- bensin Supra/Vario (masuk juga ke tabel BBM): jago BP 92 Supra 40rb 3.05L km39200.1 (harsat otomatis; atau tambah @16130). Motor lain: tanpa liter/km\n"
             "- token listrik + meter: jago token listrik 200rb 128,2kwh meter 141,14\n"
-            "- bacaan meter saja: meter 95,3 (tambah jam 05.48 bila bukan sekarang)\n\n"
+            "- bacaan meter saja: meter 95,3 (tambah jam 05.48 bila bukan sekarang)\n"
+            "- nominal di atas Rp5 juta (bukan pindah kas) ditahan dulu: balas ya untuk mencatat, batal untuk membatalkan\n\n"
             "PERINTAH\n"
             "/terakhir [n] - tampilkan n catatan terakhir (bawaan 3)\n"
             "/saldo [akun] - saldo semua akun, atau satu akun + 5 mutasi terakhir\n"
@@ -48,6 +49,8 @@ class Ctx:
         self.cfg = cfg or {}
         self.motors = (self.cfg.get("bbm") or {}).get("motors") or {}
         self.tables = tables
+        self.limit = self.cfg.get("confirm_over", 5_000_000) or 0   # K8f: nominal di atas ini perlu "ya"; 0/kosong = nonaktif
+        self.pending = {}   # sender_id -> (teks, waktu pesan) yang menunggu konfirmasi
 
     def subcategories(self, categories):
         """Daftar subcategory sah: tabel _catagories di Excel; bila tidak terbaca, kunci kamus kata kunci di config."""
@@ -370,6 +373,54 @@ class _Dry:
         return []
 
 
+YES = {"ya", "y", "iya", "ok", "oke", "benar", "betul"}
+NO = {"batal", "tidak", "gak", "ga", "nggak", "no", "n"}
+CONFIRM_TTL = 600  # detik
+
+
+def _big_entries(text, unix_ts, sender_id, categories, accounts, lexicon, ctx):
+    """Entri pengeluaran/pemasukan (bukan pindah kas/meter) di atas batas, dan jumlah baris transaksi; tanpa menyimpan."""
+    lines = _lines(text)
+    default_date = None
+    try:
+        default_date = only_date(lines[0], datetime.fromtimestamp(unix_ts, TZ).date()) if len(lines) > 1 else None
+    except FutureDate:
+        return [], 0
+    if default_date:
+        lines = lines[1:]
+    big = []
+    for line in lines:
+        entries, err = _process(line, unix_ts, sender_id, categories, _Dry(), accounts, lexicon, default_date, ctx)
+        if err:
+            continue
+        big += [e for e in entries if e.get("kind") != "meter" and e["category"] != "Pindah Kas" and e["amount"] > ctx.limit]
+    return big, len(lines)
+
+
+def _confirm_gate(t, unix_ts, sender_id, categories, accounts, lexicon, ctx):
+    """K8f. (balasan | None, teks, waktu): balasan terisi = pesan ditahan/dibatalkan; None = lanjut proses teks itu."""
+    word = t.lower().strip(" .!")
+    pend = ctx.pending.pop(sender_id, None)
+    if pend:
+        if word in NO:
+            return "Dibatalkan, tidak dicatat.", t, unix_ts
+        if word in YES:
+            if unix_ts - pend[1] > CONFIRM_TTL:
+                return "Konfirmasi kedaluwarsa (lebih dari 10 menit). Kirim ulang pesannya.", t, unix_ts
+            return None, pend[0], pend[1]  # sudah dikonfirmasi: proses pesan semula, tanpa cek lagi
+    if not ctx.limit:
+        return None, t, unix_ts
+    big, n = _big_entries(t, unix_ts, sender_id, categories, accounts, lexicon, ctx)
+    if not big:
+        return None, t, unix_ts
+    ctx.pending[sender_id] = (t, unix_ts)
+    lines = ["Nominal besar, belum dicatat:"] + [f"- {e['date']} {e['account'] or ''} {e['type']} {rupiah(e['amount'])} [{e['category']}] {e['note']}".replace("  ", " ") for e in big]
+    if n > len(big):
+        lines.append(f"(+ {n - len(big)} baris lain di pesan yang sama ikut tertahan)")
+    lines.append("Benar? Ketik ya untuk mencatat, batal untuk membatalkan (berlaku 10 menit).")
+    return "\n".join(lines), t, unix_ts
+
+
 def handle_message(text, unix_ts, sender_id, categories, queue, accounts=None, lexicon=None, ledger=None, ctx=None):
     """Balasan teks untuk satu pesan (perintah, satu transaksi, atau banyak baris); menambah antrean."""
     t = text.strip()
@@ -410,6 +461,10 @@ def handle_message(text, unix_ts, sender_id, categories, queue, accounts=None, l
         if name in ("bantuan", "help", "start"):
             return build_help(accounts)
         return "Perintah tidak dikenal. Ketik /bantuan."
+    if ctx is not None and not isinstance(queue, _Dry):
+        reply, t, unix_ts = _confirm_gate(t, unix_ts, sender_id, categories, accounts, lexicon, ctx)
+        if reply:
+            return reply
     lines = _lines(t)
     if len(lines) > 1:
         return _multi(lines, unix_ts, sender_id, categories, queue, accounts, lexicon, ctx)
